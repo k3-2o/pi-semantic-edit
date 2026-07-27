@@ -64,10 +64,14 @@ export function applyEdits(
     matches.push({ ...(match as MatchResult), edit });
   }
 
+  // Post-replacement coherence check
+  const warnings = coherenceCheck(currentContent);
+
   return {
     newContent: currentContent,
     matches,
     failed,
+    warnings: warnings.length > 0 ? warnings : undefined,
   };
 }
 
@@ -546,4 +550,65 @@ function normalizeForMatching(text: string): string {
     .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
     .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
     .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, ' ');
+}
+
+/**
+ * Post-replacement coherence check: scan the result for structural integrity
+ * issues that could indicate a wrong-location edit.
+ *
+ * Checks:
+ * - Brace/paren/bracket balance: closing should match opening count.
+ * - Indentation consistency: drastic jumps away from neighboring lines.
+ *
+ * Returns a list of warning messages. Empty list means no issues.
+ */
+function coherenceCheck(content: string): string[] {
+  const warnings: string[] = [];
+  const lines = content.split('\n');
+
+  // Brace/paren/bracket balance
+  let balance = 0;
+  for (const ch of content) {
+    if (ch === '{' || ch === '(' || ch === '[') balance++;
+    if (ch === '}' || ch === ')' || ch === ']') balance--;
+  }
+
+  if (balance > 0) {
+    warnings.push(`Unclosed ${balance} brace(s)/paren(s)/bracket(s).`);
+  } else if (balance < 0) {
+    warnings.push(`Too many closing braces/parens/brackets (excess: ${-balance}).`);
+  }
+
+  // Indentation consistency: check for drastic jumps
+  if (lines.length > 2) {
+    let prevIndent = lines[0].search(/\S/);
+    if (prevIndent < 0) prevIndent = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      const indent = line.search(/\S/);
+      if (indent < 0) continue;
+
+      const nonEmptyPrev = findPrevNonEmptyLine(lines, i);
+      if (nonEmptyPrev !== -1) {
+        const prevIndent2 = lines[nonEmptyPrev].search(/\S/);
+        if (prevIndent2 >= 0 && Math.abs(indent - prevIndent2) > 4) {
+          warnings.push(
+            `Line ${i + 1} has suspicious indentation jump (from ${prevIndent2} to ${indent} spaces).`,
+          );
+        }
+      }
+
+      if (indent >= 0) prevIndent = indent;
+    }
+  }
+
+  return warnings;
+}
+
+function findPrevNonEmptyLine(lines: string[], currentIdx: number): number {
+  for (let i = currentIdx - 1; i >= 0; i--) {
+    if (lines[i].trim().length > 0) return i;
+  }
+  return -1;
 }

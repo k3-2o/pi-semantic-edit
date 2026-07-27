@@ -30,6 +30,8 @@ export interface ApplyResult {
   matches: (MatchResult & { edit: Edit })[];
   /** Which edits failed to apply and why. */
   failed: { edit: Edit; reason: string }[];
+  /** Warnings from post-edit coherence checks. */
+  warnings?: string[];
 }
 
 export interface ToolInput {

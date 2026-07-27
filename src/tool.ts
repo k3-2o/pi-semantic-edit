@@ -110,6 +110,10 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
           text.push(`${result.failed.length} edit(s) failed:`);
           result.failed.forEach((f) => text.push(`  - ${f.reason}`));
         }
+        if (result.warnings && result.warnings.length > 0) {
+          text.push('Coherence warnings:');
+          result.warnings.forEach((w) => text.push(`  - ${w}`));
+        }
 
         return {
           content: [{ type: 'text' as const, text: text.join('\n') }],
