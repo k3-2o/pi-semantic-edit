@@ -42,17 +42,24 @@ export function applyEdits(
     const edit = edits[i];
     const match = findMatch(currentContent, edit, opts);
     if (!match) {
-      failed.push({
-        edit,
-        reason: `Could not find matching text for edits[${i}]. Try adding an anchor or providing more context.`,
-      });
+      const preview = oldTextPreview(edit.oldText);
+      const similar = findSimilarLines(currentContent, edit.oldText);
+      let msg = `Could not find matching text for edits[${i}]: ${preview}.`;
+      if (similar.length > 0) {
+        msg += ` Found similar line(s): ${similar
+          .slice(0, 3)
+          .map((s) => `"${s.trim()}"`)
+          .join(', ')}.`;
+      }
+      msg += ` Try expanding the oldText block or adding an anchor.`;
+      failed.push({ edit, reason: msg });
       continue;
     }
     if (match.start === -1) {
-      // Even joint scoring couldn't disambiguate
+      const preview = oldTextPreview(edit.oldText);
       failed.push({
         edit,
-        reason: `Found multiple ambiguous occurrences of oldText in file for edits[${i}]. Try adding an anchor or providing more context.`,
+        reason: `Found multiple occurrences of ${preview} in file for edits[${i}]. Try adding an anchor to specify which occurrence.`,
       });
       continue;
     }
@@ -611,4 +618,67 @@ function findPrevNonEmptyLine(lines: string[], currentIdx: number): number {
     if (lines[i].trim().length > 0) return i;
   }
   return -1;
+}
+
+/**
+ * Return a short preview of oldText for error messages.
+ */
+function oldTextPreview(oldText: string): string {
+  const firstLine = oldText.split('\n')[0] ?? '';
+  const trimmed = firstLine.trim();
+  if (trimmed.length > 40) return `"${trimmed.slice(0, 40)}..."`;
+  return `"${trimmed}"`;
+}
+
+/**
+ * Find lines in content that are somewhat similar to a search string.
+ * Used to provide helpful suggestions when a match fails.
+ */
+function findSimilarLines(content: string, searchText: string): string[] {
+  const searchLines = searchText.split('\n').filter((l) => l.trim().length > 0);
+  if (searchLines.length === 0) return [];
+
+  // Use the first non-empty line of oldText as the search anchor
+  const target = searchLines[0].trim();
+  if (target.length < 3) return [];
+
+  const results: string[] = [];
+  const contentLines = content.split('\n');
+
+  for (const line of contentLines) {
+    const trimmed = line.trim();
+    if (trimmed.length < 3) continue;
+    // Simple similarity: common substring or close edit distance heuristics
+    if (trimmed.includes(target) || target.includes(trimmed)) {
+      results.push(trimmed);
+    } else if (levenshteinDistance(trimmed.slice(0, 30), target.slice(0, 30)) <= 3) {
+      results.push(trimmed);
+    }
+  }
+
+  return results.slice(0, 5);
+}
+
+/**
+ * Simple Levenshtein distance for short strings (bounded at ~max distance 5).
+ */
+function levenshteinDistance(a: string, b: string, maxDist = 5): number {
+  if (Math.abs(a.length - b.length) > maxDist) return maxDist + 1;
+  const m = a.length;
+  const n = Math.min(b.length, a.length + maxDist);
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+    // Early exit if min of row exceeds maxDist
+    if (Math.min(...dp[i]) > maxDist) return maxDist + 1;
+  }
+
+  return dp[m][n];
 }
