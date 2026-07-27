@@ -682,3 +682,98 @@ function levenshteinDistance(a: string, b: string, maxDist = 5): number {
 
   return dp[m][n];
 }
+
+export interface ParsedBlock {
+  path: string;
+  oldText: string;
+  newText: string;
+}
+
+/**
+ * Parse SEARCH/REPLACE blocks from a markdown-style input string.
+ *
+ * Format:
+ *   [filename]
+ *   <<<<<<< SEARCH
+ *   old code
+ *   =======
+ *   new code
+ *   >>>>>>> REPLACE
+ *
+ * Multiple blocks can appear in the same string. If a block has no
+ * preceding file path, the previous block's path is reused.
+ */
+export function parseSearchReplaceBlocks(text: string): ParsedBlock[] {
+  const lines = text.split('\n');
+  const blocks: ParsedBlock[] = [];
+  let currentPath = '';
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+
+    // Try to match a file path (a line that is not a SEARCH/REPLACE marker)
+    if (
+      line.length > 0 &&
+      !line.startsWith('<<<<<<<') &&
+      !line.startsWith('=======') &&
+      !line.startsWith('>>>>>>>')
+    ) {
+      // Check if the next line is a SEARCH marker (heuristic for file path)
+      if (i + 1 < lines.length && lines[i + 1].trimStart().startsWith('<<<<<<<')) {
+        currentPath = lines[i].trim();
+        i++;
+        continue;
+      }
+    }
+
+    // Look for <<<<<<< SEARCH
+    if (line.startsWith('<<<<<<<')) {
+      const oldLines: string[] = [];
+      const newLines: string[] = [];
+      let phase: 'old' | 'new' = 'old';
+      i++;
+
+      while (i < lines.length) {
+        const curr = lines[i];
+        const trimmed = curr.trimStart();
+
+        if (trimmed.startsWith('=======')) {
+          // Check for blank line before? No, just switch.
+          if (phase === 'old') {
+            phase = 'new';
+            i++;
+            continue;
+          }
+          // If we see another ===== while in 'new', it's part of content
+        }
+
+        if (trimmed.startsWith('>>>>>>>')) {
+          i++;
+          break;
+        }
+
+        if (phase === 'old') {
+          // Preserve original line content (not trimmed start)
+          oldLines.push(curr);
+        } else {
+          newLines.push(curr);
+        }
+        i++;
+      }
+
+      if (oldLines.length > 0 && newLines.length > 0) {
+        blocks.push({
+          path: currentPath,
+          oldText: oldLines.join('\n'),
+          newText: newLines.join('\n'),
+        });
+      }
+      continue;
+    }
+
+    i++;
+  }
+
+  return blocks;
+}

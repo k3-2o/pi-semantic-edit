@@ -213,18 +213,16 @@ describe('edit_robust tool: integration', () => {
     }
   });
 
-  it('handles empty edits array', async () => {
-    const file = await writeTestFile('empty.txt', 'a\nb\nc\n');
+  it('rejects empty edits array', async () => {
+    const file = await writeTestFile('empty_edits.txt', 'a\nb\nc\n');
     const tool = createTool();
-    const result = await tool.execute(
-      '11',
-      { path: file, edits: [] },
-      undefined,
-      undefined,
-      undefined,
-    );
-
-    expect(result.content[0].text).toContain('Applied 0 edit(s)');
+    try {
+      await tool.execute('11', { path: file, edits: [] }, undefined, undefined, undefined);
+      expect(true).toBe(false);
+    } catch (err: unknown) {
+      const msg = (err as Error).message;
+      expect(msg).toContain('edits[]');
+    }
     expect(readTestFile(file)).toBe('a\nb\nc\n');
   });
 

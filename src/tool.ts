@@ -3,7 +3,7 @@ import { access as fsAccess, readFile } from 'fs/promises';
 import { Type } from 'typebox';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { withFileMutationQueue } from '@earendil-works/pi-coding-agent';
-import { applyEdits } from './matcher';
+import { applyEdits, parseSearchReplaceBlocks } from './matcher';
 import type { Edit } from './matcher';
 import {
   detectLineEnding,
@@ -23,12 +23,26 @@ const replaceEditSchema = Type.Object({
 });
 
 const editSchema = Type.Object({
-  path: Type.String({ description: 'Path to the file to edit (relative or absolute).' }),
-  edits: Type.Array(replaceEditSchema, {
-    description:
-      'One or more targeted replacements. Each edit is matched against the original file, not incrementally. ' +
-      'If two changes affect nearby lines, merge them into one edit. Keep edits as small as possible while unique.',
-  }),
+  path: Type.Optional(
+    Type.String({
+      description:
+        'Path to the file to edit (relative or absolute). Required if not using patch field.',
+    }),
+  ),
+  edits: Type.Optional(
+    Type.Array(replaceEditSchema, {
+      description:
+        'One or more targeted replacements. Each edit is matched against the original file, not incrementally. ' +
+        'If two changes affect nearby lines, merge them into one edit. Keep edits as small as possible while unique.',
+    }),
+  ),
+  patch: Type.Optional(
+    Type.String({
+      description:
+        'Alternative to edits: a SEARCH/REPLACE block string in the format ' +
+        '[filename]\n<<<<<<< SEARCH\nold code\n=======\nnew code\n>>>>>>> REPLACE',
+    }),
+  ),
 });
 
 /** Creates the `edit_robust` Pi tool definition. */
@@ -45,12 +59,40 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
 
     async execute(
       _toolCallId: string,
-      input: { path: string; edits: Edit[] },
+      input: { path?: string; edits?: Edit[]; patch?: string },
       signal: AbortSignal | undefined,
       _onUpdate: unknown,
       _ctx: unknown,
     ) {
-      const path = input.path;
+      // Resolve edits: either from JSON edits[] or from a SEARCH/REPLACE patch string
+      let edits: Edit[] = [];
+      let editPath: string;
+
+      if (input.patch) {
+        const parsed = parseSearchReplaceBlocks(input.patch);
+        if (parsed.length === 0) {
+          throw new Error('No valid SEARCH/REPLACE blocks found in patch.');
+        }
+        edits = parsed.map((block) => ({
+          oldText: block.oldText,
+          newText: block.newText,
+          anchor: undefined,
+        }));
+        editPath = parsed[0].path || input.path || '';
+      } else if (input.edits && input.edits.length > 0) {
+        edits = input.edits;
+        editPath = input.path || '';
+      } else {
+        throw new Error('Either edits[] or patch must be provided.');
+      }
+
+      if (!editPath) {
+        throw new Error(
+          'File path is required. Provide path in the input or include a [filename] header in the patch.',
+        );
+      }
+
+      const path = editPath;
       const absolutePath = resolveToCwd(path, cwd);
 
       return await withFileMutationQueue(absolutePath, async () => {
@@ -82,7 +124,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
         const originalEnding = detectLineEnding(bomStripped);
 
         // Apply edits against LF-normalized content
-        const result = applyEdits(bomStripped, input.edits);
+        const result = applyEdits(bomStripped, edits);
 
         if (result.failed.length > 0 && result.matches.length === 0) {
           throw new Error(
