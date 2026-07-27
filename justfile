@@ -1,5 +1,5 @@
 fmt:
-    bunx prettier --write .
+    bunx prettier --write src/ tests/
 
 lint:
     bunx eslint src/ tests/
@@ -14,7 +14,7 @@ audit:
 check: fmt lint types audit
 
 test:
-    bunx vitest run
+    bun test
 
 ci: check test
 

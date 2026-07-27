@@ -1,5 +1,12 @@
-// pi-robust-edit
-// Robust, model-agnostic edit tool for Pi.
-// Entry point will register the edit_robust tool with the Pi extension API.
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { createRobustEditTool } from './tool';
 
-export {};
+/**
+ * Pi extension entry point.
+ * Registers the `edit_robust` tool that replaces the brittle exact-text contract
+ * with a robust, model-agnostic search/replace harness.
+ */
+export default function (pi: ExtensionAPI) {
+  const cwd = process.cwd();
+  pi.registerTool(createRobustEditTool(cwd, pi));
+}
