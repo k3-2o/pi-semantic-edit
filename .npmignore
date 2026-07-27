@@ -1,0 +1,24 @@
+# Dev tooling — not needed at runtime
+tsconfig.json
+.eslintrc.cjs
+.prettierrc
+.prettierignore
+justfile
+bun.lock
+
+# Tests — not needed at runtime
+tests/
+
+# Internal agent instructions
+AGENT.md
+
+# IDE/editor config
+.vscode/
+
+# Build artifacts
+dist/
+node_modules/
+
+# Environment
+.env
+*.local

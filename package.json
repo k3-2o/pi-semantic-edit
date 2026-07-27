@@ -1,7 +1,7 @@
 {
-  "name": "pi-robust-edit",
+  "name": "pi-semantic-edit",
   "version": "0.1.0",
-  "description": "Robust, model-agnostic edit tool for Pi",
+  "description": "Semantic search/replace edit tool for Pi — model-agnostic, meaning-aware matching that replaces the built-in edit.",
   "type": "module",
   "main": "index.ts",
   "types": "index.ts",
@@ -24,5 +24,26 @@
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-ai": "*"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "K2",
+  "homepage": "https://github.com/k3-2o/pi-semantic-edit",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/k3-2o/pi-semantic-edit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/k3-2o/pi-semantic-edit/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "edit",
+    "semantic",
+    "semantic-replace",
+    "search-replace",
+    "llm",
+    "coding-agent",
+    "agent"
+  ]
 }
