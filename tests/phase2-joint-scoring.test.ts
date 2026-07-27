@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { applyEdits, type MatcherOptions } from '../src/matcher';
+import { applyEdits, type Edit, type MatcherOptions } from '../src/matcher';
 
 const opts: MatcherOptions = {
   allowNormalized: true,
@@ -8,7 +8,7 @@ const opts: MatcherOptions = {
   allowJointScoring: true,
 };
 
-function apply(content: string, edits: any[], options = opts) {
+function apply(content: string, edits: Edit[], options = opts) {
   return applyEdits(content, edits, options);
 }
 
@@ -19,7 +19,7 @@ const optsNoJoint: MatcherOptions = {
   allowJointScoring: false,
 };
 
-function applyNoJoint(content: string, edits: any[]) {
+function applyNoJoint(content: string, edits: Edit[]) {
   return applyEdits(content, edits, optsNoJoint);
 }
 
@@ -37,9 +37,7 @@ function b() {
   x;
 }
 `;
-    const result = apply(content, [
-      { oldText: 'x;', newText: 'y;' },
-    ]);
+    const result = apply(content, [{ oldText: 'x;', newText: 'y;' }]);
     expect(result.matches).toHaveLength(1);
     // With scoring, it should pick one — let's verify the file content
     const lines = result.newContent.split('\n');
@@ -63,9 +61,7 @@ function foo() {
     // oldText "x;" appears in both blocks.
     // Replacing inside the if block (first occurrence) is more likely intended
     // because it maintains the structure.
-    const result = apply(content, [
-      { oldText: 'x;', newText: 'x++;' },
-    ]);
+    const result = apply(content, [{ oldText: 'x;', newText: 'x++;' }]);
     expect(result.matches).toHaveLength(1);
     expect(result.newContent).toContain('x++;');
   });
@@ -77,9 +73,7 @@ b
 x
 c
 `;
-    const result = applyNoJoint(content, [
-      { oldText: 'x', newText: 'y' },
-    ]);
+    const result = applyNoJoint(content, [{ oldText: 'x', newText: 'y' }]);
     // Without scoring, auto-expand should handle "a\nx" vs "b\nx" disambiguation
     expect(result.matches).toHaveLength(1);
     expect(result.newContent).toBe('a\ny\nb\nx\nc\n');

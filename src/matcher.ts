@@ -163,7 +163,13 @@ function findMatch(
     if (expanded) return expanded;
   }
 
-  // Layer 5: joint old/new scoring — disambiguate using the edit relationship
+  // Layer 5: token fingerprint matching — use identifier relationships
+  if (multipleExact) {
+    const tf = tokenFingerprintMatch(content, edit);
+    if (tf) return tf;
+  }
+
+  // Layer 6: joint old/new scoring — disambiguate using the edit relationship
   if (opts.allowJointScoring && multipleExact) {
     const scored = jointScoreMatch(content, edit);
     if (scored) return scored;
@@ -175,6 +181,123 @@ function findMatch(
 }
 
 /**
+ * Token fingerprint matching: use identifier relationships between oldText
+ * and newText to disambiguate structurally identical blocks that differ
+ * only in variable/function names.
+ */
+function tokenFingerprintMatch(content: string, edit: Edit): MatchResult | null {
+  const oldNorm = normalizeNewlines(edit.oldText);
+  const newNorm = normalizeNewlines(edit.newText);
+  const oldIds = extractIdentifiers(oldNorm);
+  const newIds = extractIdentifiers(newNorm);
+  const oldIdSet = new Set(oldIds);
+  const preservedIds = newIds.filter((id) => oldIdSet.has(id));
+  if (preservedIds.length === 0) return null;
+  const candidates = findAllPositions(content, oldNorm);
+  if (candidates.length <= 1) return null;
+  let bestScore = 0;
+  let bestMatch: { start: number; end: number } | null = null;
+  for (const { start, end } of candidates) {
+    const region = content.slice(Math.max(0, start - 200), Math.min(content.length, end + 200));
+    const localIds = extractIdentifiers(region);
+    const localSet = new Set(localIds);
+    let score = 0;
+    for (const id of preservedIds) {
+      if (localSet.has(id)) score++;
+    }
+    const addedIds = newIds.filter((id) => !oldIdSet.has(id));
+    const removedIds = oldIds.filter((id) => !new Set(newIds).has(id));
+    for (const id of removedIds) {
+      if (localSet.has(id)) score++;
+    }
+    for (const id of addedIds) {
+      if (!localSet.has(id)) score++;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = { start, end };
+    }
+  }
+  if (bestMatch && bestScore > 0) {
+    return {
+      start: bestMatch.start,
+      end: bestMatch.end,
+      usedFuzzy: false,
+      usedNormalized: false,
+      description: `token-fingerprint match (score: ${bestScore})`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Extract simple identifiers from code text, excluding language keywords.
+ */
+function extractIdentifiers(text: string): string[] {
+  const regex = /[a-zA-Z_$][a-zA-Z0-9_$]*/g;
+  const keywords = new Set([
+    'if',
+    'else',
+    'for',
+    'while',
+    'do',
+    'switch',
+    'case',
+    'break',
+    'continue',
+    'return',
+    'throw',
+    'try',
+    'catch',
+    'finally',
+    'function',
+    'class',
+    'var',
+    'let',
+    'const',
+    'import',
+    'export',
+    'from',
+    'def',
+    'in',
+    'not',
+    'and',
+    'or',
+    'true',
+    'false',
+    'null',
+    'undefined',
+    'void',
+    'typeof',
+    'instanceof',
+    'new',
+    'this',
+    'super',
+    'yield',
+    'await',
+    'async',
+    'static',
+    'get',
+    'set',
+    'public',
+    'private',
+    'protected',
+    'readonly',
+    'int',
+    'float',
+    'double',
+    'char',
+    'bool',
+    'string',
+    'fn',
+    'mut',
+  ]);
+  const matches = text.match(regex);
+  if (!matches) return [];
+  return matches.filter((id) => !keywords.has(id));
+}
+
+/**
  * Joint old/new scoring: when oldText matches multiple locations, evaluate
  * each candidate by simulating the replacement and scoring the result.
  *
@@ -183,10 +306,7 @@ function findMatch(
  * - Context continuity (unchanged surrounding lines should remain unchanged)
  * - The new text should not create duplicate adjacent code
  */
-function jointScoreMatch(
-  content: string,
-  edit: Edit,
-): MatchResult | null {
+function jointScoreMatch(content: string, edit: Edit): MatchResult | null {
   const oldNorm = normalizeNewlines(edit.oldText);
   const newNorm = normalizeNewlines(edit.newText);
   const candidates = findAllPositions(content, oldNorm);
@@ -322,14 +442,11 @@ function braceBalance(text: string): number {
 }
 
 /** Find all positions of target in content. */
-function findAllPositions(
-  content: string,
-  target: string,
-): { start: number; end: number }[] {
+function findAllPositions(content: string, target: string): { start: number; end: number }[] {
   if (target.length === 0) return [];
   const positions: { start: number; end: number }[] = [];
   let pos = 0;
-  while (true) {
+  for (;;) {
     const idx = content.indexOf(target, pos);
     if (idx === -1) break;
     positions.push({ start: idx, end: idx + target.length });
@@ -341,10 +458,7 @@ function findAllPositions(
 // ---- Existing layers (unchanged below) ---- //
 
 /** Try exact match with uniqueness check. */
-function exactMatch(
-  content: string,
-  oldNorm: string,
-): MatchResult | -1 | -2 {
+function exactMatch(content: string, oldNorm: string): MatchResult | -1 | -2 {
   const idx = content.indexOf(oldNorm);
   if (idx === -1) return -1;
   const nextIdx = content.indexOf(oldNorm, idx + oldNorm.length);
@@ -358,11 +472,7 @@ function exactMatch(
 }
 
 /** Auto-expand: try to find a unique match by expanding context around each occurrence. */
-function tryAutoExpand(
-  content: string,
-  edit: Edit,
-  opts: MatcherOptions,
-): MatchResult | null {
+function tryAutoExpand(content: string, edit: Edit, opts: MatcherOptions): MatchResult | null {
   const oldNorm = normalizeNewlines(edit.oldText);
   if (oldNorm.length === 0) return null;
   const lines = content.split('\n');
