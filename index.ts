@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { createRobustEditTool } from './tool';
+import { createRobustEditTool } from './src/tool';
 
 /**
  * Pi extension entry point.
