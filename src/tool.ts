@@ -233,18 +233,19 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
     name: 'edit',
     label: 'edit',
     description:
-      'Edit a single file using exact text replacement. Every edits[].oldText must match a unique, ' +
-      'non-overlapping region of the original file. If two changes affect the same block or nearby lines, ' +
-      'merge them into one edit instead of emitting overlapping edits. Do not include large unchanged ' +
-      'regions just to connect distant changes. (Backed by a robust, multi-layer matcher that handles ' +
-      'whitespace drift, duplicates, anchors, and variable-name ambiguity.)',
+      'Edit a file by providing old and new code blocks (or a SEARCH/REPLACE patch). ' +
+      'The tool handles whitespace drift, duplicate disambiguation, anchors, and structural checks. ' +
+      'If oldText appears in multiple places, add an "anchor" field with a nearby unique snippet, ' +
+      'or provide a SEARCH/REPLACE block with enough context to uniquely identify the location.',
     promptSnippet:
-      'Make precise file edits with exact text replacement, including multiple disjoint edits in one call',
+      'Edit files using old/new code blocks or SEARCH/REPLACE patches with anchor support',
     promptGuidelines: [
-      'Use edit for precise changes (edits[].oldText must match exactly)',
-      'When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls',
-      'Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.',
-      'Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.',
+      'Use edit for file changes. Provide the old code and the new code — the tool handles minor whitespace and line-ending differences.',
+      'For targeted changes, include an "anchor" field with a nearby unique snippet (function name, unique comment) to narrow the search.',
+      'Alternatively, use a SEARCH/REPLACE block in the "patch" field: [filename]\\n<<<<<<< SEARCH\\nold code\\n=======\\nnew code\\n>>>>>>> REPLACE',
+      'If oldText matches multiple locations, add more context or an anchor. The tool will try to disambiguate, but may ask for help.',
+      'The tool checks for structural integrity (balanced braces, indentation) after editing and warns if something looks wrong.',
+      'Keep oldText as short as possible while still being unique. Do not pad with large unchanged regions.',
     ],
     parameters: editSchema,
     renderShell: 'self' as const,
