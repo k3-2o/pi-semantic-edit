@@ -6,6 +6,8 @@
  * 2. Normalized match — content and oldText normalized for whitespace/unicode
  * 3. Anchor-constrained match — search only inside a unique anchor region
  * 4. Auto-expanding context — grow oldText outward until unique
+ * 5. Joint old/new scoring — when oldText is ambiguous, use the old/new
+ *    relationship to score each candidate and pick the best fit.
  */
 
 import type { Edit, MatchResult, ApplyResult, MatcherOptions } from './types';
@@ -16,6 +18,7 @@ const DEFAULT_OPTIONS: MatcherOptions = {
   allowNormalized: true,
   allowExpand: true,
   maxExpandLines: 10,
+  allowJointScoring: true,
 };
 
 /**
@@ -29,7 +32,6 @@ export function applyEdits(
   edits: Edit[],
   options: MatcherOptions = {},
 ): ApplyResult {
-  // Normalize input content to LF for consistent matching
   const lfContent = normalizeNewlines(content);
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const matches: (MatchResult & { edit: Edit })[] = [];
@@ -47,9 +49,10 @@ export function applyEdits(
       continue;
     }
     if (match.start === -1) {
+      // Even joint scoring couldn't disambiguate
       failed.push({
         edit,
-        reason: `Found multiple occurrences of oldText in file for edits[${i}]. Try adding an anchor or providing more context.`,
+        reason: `Found multiple ambiguous occurrences of oldText in file for edits[${i}]. Try adding an anchor or providing more context.`,
       });
       continue;
     }
@@ -80,7 +83,6 @@ function findMatch(
 ): MatchResult | null | { start: -1; end: -1 } {
   const oldNorm = normalizeNewlines(edit.oldText);
 
-  // Empty oldText cannot match
   if (oldNorm.length === 0) return null;
 
   // Layer 1: exact match
@@ -109,7 +111,6 @@ function findMatch(
         };
       }
     }
-    // Try with normalized matching inside anchor
     if (opts.allowNormalized) {
       const fuzzyContent = normalizeForMatching(content);
       const fuzzyOld = normalizeForMatching(edit.oldText);
@@ -142,7 +143,6 @@ function findMatch(
     if (fuzzyOld.length > 0) {
       const idx = fuzzyContent.indexOf(fuzzyOld);
       if (idx !== -1) {
-        // Check uniqueness in normalized space
         const nextIdx = fuzzyContent.indexOf(fuzzyOld, idx + fuzzyOld.length);
         if (nextIdx === -1) {
           return {
@@ -153,7 +153,6 @@ function findMatch(
             description: 'normalized match (whitespace/unicode tolerant)',
           };
         }
-        // Multiple occurrences in fuzzy space — falls through to expand
       }
     }
   }
@@ -164,23 +163,192 @@ function findMatch(
     if (expanded) return expanded;
   }
 
-  // Fallback: if we know oldText exists but couldn't resolve, report multiple
+  // Layer 5: joint old/new scoring — disambiguate using the edit relationship
+  if (opts.allowJointScoring && multipleExact) {
+    const scored = jointScoreMatch(content, edit);
+    if (scored) return scored;
+  }
+
   if (multipleExact) return { start: -1, end: -1 };
 
   return null;
 }
 
 /**
- * Try exact match with uniqueness check.
- * Returns MatchResult on success, -2 if multiple occurrences, -1 if not found.
+ * Joint old/new scoring: when oldText matches multiple locations, evaluate
+ * each candidate by simulating the replacement and scoring the result.
+ *
+ * Scoring factors:
+ * - Structural coherence (brace balance, indentation) — higher is better
+ * - Context continuity (unchanged surrounding lines should remain unchanged)
+ * - The new text should not create duplicate adjacent code
  */
-function exactMatch(content: string, oldNorm: string): MatchResult | -1 | -2 {
+function jointScoreMatch(
+  content: string,
+  edit: Edit,
+): MatchResult | null {
+  const oldNorm = normalizeNewlines(edit.oldText);
+  const newNorm = normalizeNewlines(edit.newText);
+  const candidates = findAllPositions(content, oldNorm);
+  if (candidates.length === 0) return null;
+
+  let bestScore = -Infinity;
+  let bestMatch: { start: number; end: number } | null = null;
+
+  for (const { start, end } of candidates) {
+    // Simulate the replacement
+    const before = content.slice(0, start);
+    const after = content.slice(end);
+    const result = before + newNorm + after;
+
+    const score = computeCoherenceScore(content, result, start, end, oldNorm, newNorm);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = { start, end };
+    }
+  }
+
+  if (bestMatch && bestScore > 0) {
+    return {
+      start: bestMatch.start,
+      end: bestMatch.end,
+      usedFuzzy: false,
+      usedNormalized: false,
+      description: `joint-scored match (score: ${bestScore.toFixed(1)})`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Compute a coherence score for a candidate replacement.
+ *
+ * Factors:
+ * 1. Brace/paren/bracket balance: how much the balance changes
+ * 2. Indentation consistency: comparing indentation of lines around the edit
+ * 3. Line count: prefer edits that maintain similar line counts (less likely to be accidental)
+ * 4. Context preservation: lines outside the edit region should be identical
+ */
+function computeCoherenceScore(
+  originalContent: string,
+  newContent: string,
+  editStart: number,
+  editEnd: number,
+  oldNorm: string,
+  newNorm: string,
+): number {
+  const BONUS_BALANCE = 30;
+  const BONUS_SAME_LINE_COUNT = 10;
+  const PENALTY_DUPLICATE = -15;
+  const PENALTY_BRACE_IMBALANCE = -50;
+
+  let score = 0;
+
+  // 1. Context preservation: lines outside the edit must be identical
+  const beforeEdit = originalContent.slice(0, editStart);
+  const afterEdit = originalContent.slice(editEnd);
+  const newBeforeEdit = newContent.slice(0, editStart);
+  const newAfterEdit = newContent.slice(newContent.length - afterEdit.length);
+
+  if (beforeEdit !== newBeforeEdit || afterEdit !== newAfterEdit) {
+    // The harness changes content outside the edit, which is a strong negative signal
+    score -= 30;
+  }
+
+  // 2. Brace balance: compare before vs after balance
+  const originalBal = braceBalance(originalContent);
+  const newBal = braceBalance(newContent);
+  if (newBal >= 0 && originalBal >= 0) {
+    if (newBal === originalBal) {
+      score += BONUS_BALANCE;
+    } else {
+      score += PENALTY_BRACE_IMBALANCE;
+    }
+  }
+
+  // 3. Same-line-count bonus
+  const oldLines = oldNorm.split('\n').length;
+  const newLines = newNorm.split('\n').length;
+  if (oldLines === newLines) {
+    score += BONUS_SAME_LINE_COUNT;
+  }
+
+  // 4. Duplicate detection: if newNorm already exists nearby, penalize
+  const contextAround = 5; // lines around the edit
+  const contentLines = newContent.split('\n');
+  const editLineIdx = findLineIndexFromOffset(contentLines, editStart);
+  const startContext = Math.max(0, editLineIdx - contextAround);
+  const endContext = Math.min(contentLines.length, editLineIdx + contextAround + 1);
+  for (let i = startContext; i < endContext; i++) {
+    if (i !== editLineIdx && contentLines[i]?.includes(newNorm.trim())) {
+      score += PENALTY_DUPLICATE;
+      break;
+    }
+  }
+
+  // 5. Prefer candidate where the old text matches the structure of surrounding code
+  // (e.g., same indentation level as neighboring lines)
+  const oldLine = originalContent.slice(editStart, editEnd).split('\n')[0] ?? '';
+  const indentLevel = oldLine.search(/\S/); // first non-whitespace
+  if (indentLevel >= 0) {
+    const lines = originalContent.split('\n');
+    const idx = findLineIndexFromOffset(lines, editStart);
+    // Check surrounding lines for similar indentation
+    let similarIndentCount = 0;
+    for (let di = -2; di <= 2; di++) {
+      const neighborIdx = idx + di;
+      if (neighborIdx >= 0 && neighborIdx < lines.length && neighborIdx !== idx) {
+        const neighborIndent = lines[neighborIdx].search(/\S/);
+        if (neighborIndent >= 0 && Math.abs(neighborIndent - indentLevel) <= 1) {
+          similarIndentCount++;
+        }
+      }
+    }
+    score += similarIndentCount * 2;
+  }
+
+  return score;
+}
+
+/** Simple brace/parenthesis/bracket balance. Returns count of open vs close, or -1 if mismatch type. */
+function braceBalance(text: string): number {
+  let open = 0;
+  for (const ch of text) {
+    if (ch === '{' || ch === '(' || ch === '[') open++;
+    if (ch === '}' || ch === ')' || ch === ']') open--;
+  }
+  return open;
+}
+
+/** Find all positions of target in content. */
+function findAllPositions(
+  content: string,
+  target: string,
+): { start: number; end: number }[] {
+  if (target.length === 0) return [];
+  const positions: { start: number; end: number }[] = [];
+  let pos = 0;
+  while (true) {
+    const idx = content.indexOf(target, pos);
+    if (idx === -1) break;
+    positions.push({ start: idx, end: idx + target.length });
+    pos = idx + target.length;
+  }
+  return positions;
+}
+
+// ---- Existing layers (unchanged below) ---- //
+
+/** Try exact match with uniqueness check. */
+function exactMatch(
+  content: string,
+  oldNorm: string,
+): MatchResult | -1 | -2 {
   const idx = content.indexOf(oldNorm);
   if (idx === -1) return -1;
-
   const nextIdx = content.indexOf(oldNorm, idx + oldNorm.length);
-  if (nextIdx !== -1) return -2; // multiple occurrences
-
+  if (nextIdx !== -1) return -2;
   return {
     start: idx,
     end: idx + oldNorm.length,
@@ -189,17 +357,16 @@ function exactMatch(content: string, oldNorm: string): MatchResult | -1 | -2 {
   };
 }
 
-/**
- * Auto-expand: try to find a unique match by expanding context around each occurrence.
- * Grows the searched block outward until only one occurrence matches uniquely.
- */
-function tryAutoExpand(content: string, edit: Edit, opts: MatcherOptions): MatchResult | null {
+/** Auto-expand: try to find a unique match by expanding context around each occurrence. */
+function tryAutoExpand(
+  content: string,
+  edit: Edit,
+  opts: MatcherOptions,
+): MatchResult | null {
   const oldNorm = normalizeNewlines(edit.oldText);
   if (oldNorm.length === 0) return null;
-
   const lines = content.split('\n');
   const maxExpand = opts.maxExpandLines ?? 10;
-
   const occurrences = findOccurrences(content, oldNorm);
   if (occurrences.length <= 1) return null;
 
@@ -207,11 +374,9 @@ function tryAutoExpand(content: string, edit: Edit, opts: MatcherOptions): Match
     for (const occStart of occurrences) {
       const occLineIdx = findLineIndex(lines, occStart);
       if (occLineIdx === -1) continue;
-
       const startLine = Math.max(0, occLineIdx - expandSize);
       const endLine = Math.min(lines.length, occLineIdx + expandSize + 1);
       const expandedBlock = lines.slice(startLine, endLine).join('\n');
-
       const matches = findOccurrences(content, expandedBlock);
       if (matches.length === 1) {
         const blockStart = matches[0];
@@ -229,11 +394,9 @@ function tryAutoExpand(content: string, edit: Edit, opts: MatcherOptions): Match
       }
     }
   }
-
   return null;
 }
 
-/** Find all occurrences of target string in content. Returns empty array if target is empty. */
 function findOccurrences(content: string, target: string): number[] {
   if (target.length === 0) return [];
   const positions: number[] = [];
@@ -247,7 +410,6 @@ function findOccurrences(content: string, target: string): number[] {
   return positions;
 }
 
-/** Find the line index (0-based) that contains the given character offset. */
 function findLineIndex(lines: string[], offset: number): number {
   let total = 0;
   for (let i = 0; i < lines.length; i++) {
@@ -257,15 +419,14 @@ function findLineIndex(lines: string[], offset: number): number {
   return lines.length - 1;
 }
 
-/** Normalize line endings in text to LF. */
+function findLineIndexFromOffset(lines: string[], offset: number): number {
+  return findLineIndex(lines, offset);
+}
+
 function normalizeNewlines(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
-/**
- * Normalize text for fuzzy matching: strip trailing whitespace per line,
- * normalize smart quotes, dashes, special spaces.
- */
 function normalizeForMatching(text: string): string {
   return normalizeNewlines(text)
     .split('\n')

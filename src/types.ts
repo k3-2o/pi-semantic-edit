@@ -58,6 +58,8 @@ export interface MatcherOptions {
   allowNormalized?: boolean;
   /** Whether to attempt auto-expanding context when oldText is not unique. Default: true. */
   allowExpand?: boolean;
+  /** Whether to use joint old/new scoring to disambiguate duplicates. Default: true. */
+  allowJointScoring?: boolean;
   /** Maximum lines to expand in each direction for auto-expand. Default: 10. */
   maxExpandLines?: number;
 }
