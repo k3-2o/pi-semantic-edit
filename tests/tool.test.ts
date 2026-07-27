@@ -59,7 +59,7 @@ describe('edit_robust tool: integration', () => {
     );
 
     expect(readTestFile(file)).toBe('a\nx\nc\n');
-    expect(result.content[0].text).toContain('Applied 1 edit');
+    expect(result.content[0].text).toContain('Successfully replaced');
   });
 
   it('applies a normalized match (trailing whitespace in oldText)', async () => {
@@ -221,7 +221,7 @@ describe('edit_robust tool: integration', () => {
       expect(true).toBe(false);
     } catch (err: unknown) {
       const msg = (err as Error).message;
-      expect(msg).toContain('edits[]');
+      expect(msg).toContain('must contain at least one replacement');
     }
     expect(readTestFile(file)).toBe('a\nb\nc\n');
   });
