@@ -41,15 +41,16 @@
   },
   "keywords": [
     "pi-package",
-    "pi",
-    "pi-extension",
-    "pi-coding-agent",
-    "edit",
-    "semantic",
     "semantic-replace",
-    "search-replace",
-    "llm",
-    "coding-agent",
-    "agent"
+    "model-agnostic",
+    "code-editing",
+    "intent-resolution",
+    "search-replace-blocks",
+    "anchor-matching",
+    "coherence-check",
+    "joint-scoring",
+    "token-fingerprint",
+    "zero-dependencies",
+    "pi-coding-agent"
   ]
 }
