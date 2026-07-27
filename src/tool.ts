@@ -9,17 +9,12 @@ import { Box, Container, getCapabilities, hyperlink, Spacer, Text } from '@earen
 import {
   renderDiff,
   withFileMutationQueue,
+  generateDiffString,
   type ExtensionAPI,
 } from '@earendil-works/pi-coding-agent';
 import { applyEdits, parseSearchReplaceBlocks } from './matcher';
 import type { Edit } from './matcher';
-import {
-  detectLineEnding,
-  restoreLineEndings,
-  stripBom,
-  generateDiff,
-  generateUnifiedPatch,
-} from './utils';
+import { detectLineEnding, restoreLineEndings, stripBom, generateUnifiedPatch } from './utils';
 
 // ---- Schema (matches Pi's built-in edit schema exactly) ---- //
 
@@ -324,7 +319,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
         await writeFile(absolutePath, finalContent, 'utf-8');
         throwIfAborted();
 
-        const diffResult = generateDiff(bomStripped, result.newContent);
+        const diffResult = generateDiffString(bomStripped, result.newContent);
         const patch = generateUnifiedPatch(path, bomStripped, result.newContent);
 
         const text: string[] = [
@@ -434,7 +429,8 @@ async function computePreviewDiff(input: any, cwd: string): Promise<EditPreview>
     const baseContent = content;
     const result = applyEdits(baseContent, edits);
     const newContent = result.newContent;
-    const { diff, firstChangedLine } = generateDiff(baseContent, newContent);
+    const diffResult = generateDiffString(baseContent, newContent);
+    const { diff, firstChangedLine } = diffResult;
     return { diff, firstChangedLine };
   } catch (err: any) {
     return { error: err.message || String(err) };
