@@ -1,8 +1,11 @@
+# TS files that exist right now (src/ appears in Phase 1)
+FILES := `find src tests -name '*.ts' 2>/dev/null | tr '\n' ' '; true`
+
 fmt:
-    bunx prettier --write src/ tests/
+    @if [ -n "{{FILES}}" ]; then bunx prettier --write {{FILES}}; fi
 
 lint:
-    bunx eslint src/ tests/
+    @if [ -n "{{FILES}}" ]; then bunx eslint {{FILES}}; fi
 
 types:
     bunx tsc --noEmit

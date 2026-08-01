@@ -1,7 +1,7 @@
 {
   "name": "pi-semantic-edit",
   "version": "0.1.0",
-  "description": "Semantic search/replace edit tool for Pi — model-agnostic, meaning-aware matching that replaces the built-in edit.",
+  "description": "Semantic search/replace edit tool for Pi \u2014 model-agnostic, meaning-aware matching that replaces the built-in edit.",
   "type": "module",
   "main": "index.ts",
   "types": "index.ts",
@@ -11,8 +11,8 @@
     ]
   },
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -22,8 +22,7 @@
     "@typescript-eslint/parser": "^7.13.0",
     "eslint": "^8.57.0",
     "prettier": "^3.3.0",
-    "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "typescript": "^5.4.5"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
