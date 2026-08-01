@@ -15,14 +15,12 @@ export interface ParsedBlock {
 }
 
 /**
- * Result of a successful fuzzy match.
- * `actual` is the substring found in the ORIGINAL content (never the query text),
- * so replacements preserve real formatting. `passName` identifies which pass
- * matched (OpenDev parity: "simple", "line_trimmed", ..., "multi_occurrence").
+ * A successful fuzzy match. `actual` is the substring found in the ORIGINAL
+ * content (never the query text), so replacements preserve real formatting.
  */
 export interface MatchResult {
   actual: string;
-  passName: string;
+  passName: string; // which pass matched — for logging (OpenDev parity)
 }
 
 /** A candidate near-miss for closest-candidate-on-failure feedback. */

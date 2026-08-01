@@ -1,6 +1,4 @@
-// The edit engine — pure orchestration of the domain pipeline for one file:
-// findMatch → uniqueness → closest-candidate → applyEdits. Tool/preview share
-// this; it's fully testable without Pi.
+// Per-file edit orchestration: findMatch → uniqueness → closest-candidate → applyEdits.
 
 import { applyEdits } from './apply';
 import { findClosestCandidate } from './closest';
@@ -126,14 +124,12 @@ function failureToError(f: FailedEdit): EditError {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-expand disambiguation (spec §5.3, decided Phase 2)
+// Auto-expand disambiguation
 //
-// When the model's SEARCH text matches multiple locations, grow context
-// symmetrically (alternating: line above, line below) around EVERY occurrence
-// until exactly ONE occurrence's expanded block is unique in the file. The
-// replacement applies to the ORIGINAL (unexpanded) span — expansion is only
-// for locating the right occurrence. If multiple occurrences become unique
-// simultaneously, they're genuinely indistinguishable → ambiguous error.
+// When SEARCH matches multiple locations, grow context symmetrically around
+// every occurrence until exactly ONE is unique. The replacement applies to the
+// ORIGINAL span — expansion only locates. Multiple simultaneously-unique
+// occurrences are genuinely indistinguishable → ambiguous error.
 // ---------------------------------------------------------------------------
 
 function tryAutoExpand(

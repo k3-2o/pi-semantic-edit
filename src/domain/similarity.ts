@@ -1,25 +1,17 @@
-// Byte-level LCS similarity ratio — port of OpenDev passes.rs `similarity()`,
-// which mirrors Python's difflib.SequenceMatcher.ratio().
+// Byte-level LCS similarity ratio — port of OpenDev's passes.rs `similarity()`
+// (mirrors Python's difflib.SequenceMatcher.ratio): 2 * LCS / (lenA + lenB).
 
-/**
- * Similarity ratio between two strings (0.0 to 1.0):
- * 2 * LCS(a,b) / (len(a) + len(b)), computed on bytes.
- * Port of OpenDev's `similarity()` (passes.rs).
- */
 export function similarity(a: string, b: string): number {
   if (a.length === 0 && b.length === 0) return 1.0;
   if (a.length === 0 || b.length === 0) return 0.0;
-
-  const lcsLen = lcsLength(a, b);
-  return (2.0 * lcsLen) / (a.length + b.length);
+  return (2.0 * lcsLength(a, b)) / (a.length + b.length);
 }
 
-/** Length of the longest common subsequence (space-optimized DP). */
+/** Longest common subsequence length (space-optimized DP). */
 function lcsLength(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
-  // DP over UTF-16 code units — matches OpenDev's byte-level behavior for the
-  // same string data; both count code units, not code points.
+  // UTF-16 code units — matches OpenDev's byte-level counting for the same data.
   let prev = new Array<number>(n + 1).fill(0);
   let curr = new Array<number>(n + 1).fill(0);
 

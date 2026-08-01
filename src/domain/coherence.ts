@@ -1,7 +1,5 @@
-// Coherence verification — non-blocking structural warnings after an edit
-// (spec §5.3: brace balance + indentation jump). Ported from the old
-// experiment's proven coherenceCheck. Runs on the RESULT content; warnings
-// are advisory — the edit still applies.
+// Coherence verification — non-blocking structural warnings on the result
+// content (brace balance + indentation jumps). Warnings are advisory.
 
 export function coherenceCheck(content: string): string[] {
   const warnings: string[] = [];

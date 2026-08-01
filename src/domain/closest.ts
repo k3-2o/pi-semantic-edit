@@ -1,12 +1,8 @@
-// Closest-candidate-on-failure — when the 9-pass chain finds nothing, locate
-// the nearest near-miss so the model can correct against real file content
-// (spec §5.5; paper §3.4 "Designing for Approximate Outputs").
-//
-// Strategy: score every original line against the query's first trimmed line
-// by LCS similarity; take lines above a low floor as anchor candidates, then
-// evaluate bounded windows from each anchor against the whole query and return
-// the best. The floor (not the passes' 0.3/0.5 thresholds) is the only gate —
-// "nearest candidate, even below threshold."
+// Closest-candidate-on-failure: when the chain finds nothing, return the
+// nearest near-miss so the model corrects against real file content.
+// Anchor on lines similar to the query's first line (floor-gated), then score
+// bounded windows from each anchor. The floor — not the passes' thresholds —
+// is the only gate: "nearest candidate, even below threshold."
 
 import { similarity } from './similarity';
 import type { ClosestCandidate } from './types';

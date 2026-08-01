@@ -12,10 +12,8 @@
 //   >>>>>>> REPLACE
 //   ```
 //
-// Fences (``` with any trailing text) are stripped; blocks are located by
-// their markers; each block's path comes from the line preceding its SEARCH
-// marker. If a block has no path header, the previous block's path is reused
-// (aider/old-parser behavior).
+// Fences are stripped; each block's path comes from the line preceding its
+// SEARCH marker (previous block's path reused when absent).
 
 import type { ParsedBlock } from './types';
 

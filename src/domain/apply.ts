@@ -1,7 +1,5 @@
-// applyEdits — applies resolved edits against ORIGINAL content, bottom-up,
-// so earlier spans don't shift while later ones are replaced. Overlapping and
-// no-op edits fail explicitly. Non-incremental by design: every match is
-// resolved against the original content (aider/Pi semantics).
+// Applies resolved edits against ORIGINAL content, bottom-up (higher spans
+// first, so indices stay valid). Overlaps and no-ops fail explicitly.
 
 import type { ApplyResult, ResolvedEdit } from './types';
 import { normalizeNewlines } from './utils';

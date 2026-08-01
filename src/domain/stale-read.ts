@@ -1,12 +1,8 @@
 // ReadRegistry — stale-read detection (paper: FileTimeTracker + assert_fresh).
-//
-// Records when the agent last "read" a file and rejects edits when the file's
-// mtime is newer than that read (+ tolerance). The registry is pure: clock and
-// stat are injected, so tests use fake time/filesystems. The Pi adapter
-// (read-observer) feeds records from built-in `read` calls; the tool calls
-// selfRefresh() after a successful write (the edit result contains the new
-// file state, so the model's knowledge is fresh — prevents edit→edit
-// false positives).
+// Records when the agent last read a file; edits are rejected when the file's
+// mtime is newer than that read (+ tolerance). Clock/stat are injected so
+// tests use fake time; the Pi adapter feeds reads, the tool self-refreshes
+// after a successful write (its result contains the new file state).
 
 import type { EditError } from './types';
 
