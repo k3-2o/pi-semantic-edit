@@ -224,6 +224,38 @@ describe('edit tool execute', () => {
     expect(await readFile(join(dir, 'session-cwd.ts'), 'utf-8')).toBe('let a = 2;\n');
   });
 
+  it('returns unified patch in details (built-in parity)', async () => {
+    await writeFixture('patch.ts', 'let x = 1;\n');
+    const result = await tool.execute(
+      '1',
+      { patch: patchFor('patch.ts', 'let x = 1;', 'let x = 2;') },
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.details.patch).toContain('--- patch.ts');
+    expect(result.details.patch).toContain('+++ patch.ts');
+    expect(result.details.patch).toContain('-let x = 1;');
+    expect(result.details.patch).toContain('+let x = 2;');
+  });
+
+  it('prepareArguments parses edits passed as a JSON string (built-in parity)', async () => {
+    const prepared = tool.prepareArguments({
+      path: 'legacy.ts',
+      edits: JSON.stringify([
+        { oldText: 'a', newText: 'b' },
+        { oldText: 'c', newText: 'd' },
+      ]),
+    });
+    expect(prepared.patch).toContain('<<<<<<< SEARCH');
+    expect(prepared.patch.match(/<<<<<<< SEARCH/g)).toHaveLength(2);
+    // malformed JSON string falls through unchanged
+    expect(tool.prepareArguments({ path: 'x.ts', edits: 'not-json' })).toEqual({
+      path: 'x.ts',
+      edits: 'not-json',
+    });
+  });
+
   it('prepareArguments converts legacy edits[] shape to a patch', async () => {
     const prepared = tool.prepareArguments({
       path: 'legacy.ts',

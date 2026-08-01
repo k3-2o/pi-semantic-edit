@@ -8,6 +8,7 @@ import { access as fsAccess, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import {
   generateDiffString,
+  generateUnifiedPatch,
   withFileMutationQueue,
   type ExtensionAPI,
 } from '@earendil-works/pi-coding-agent';
@@ -69,10 +70,21 @@ function groupByPath(blocks: ParsedBlock[]): FileGroup[] {
   return groups;
 }
 
-/** Convert a legacy (old experiment) args shape into an aider patch. */
+/** Convert a legacy (built-in / old experiment) args shape into an aider patch. */
 function legacyArgsToPatch(input: any): { patch: string } | null {
   const edits: { oldText: string; newText: string }[] = [];
-  if (Array.isArray(input.edits)) edits.push(...input.edits);
+  // Some models (e.g. Opus 4.6, GLM-5.1) send edits as a JSON string
+  // (built-in edit handles this too — keep parity for session resume).
+  if (typeof input.edits === 'string') {
+    try {
+      const parsed = JSON.parse(input.edits);
+      if (Array.isArray(parsed)) edits.push(...parsed);
+    } catch {
+      /* malformed JSON — fall through */
+    }
+  } else if (Array.isArray(input.edits)) {
+    edits.push(...input.edits);
+  }
   if (typeof input.oldText === 'string' && typeof input.newText === 'string') {
     edits.push({ oldText: input.oldText, newText: input.newText });
   }
@@ -152,6 +164,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       const summaries: string[] = [];
       const matchPasses: string[] = [];
       let primaryDiff = '';
+      let primaryPatch = '';
       let primaryFirstChangedLine = 0;
 
       for (const group of groupByPath(blocks)) {
@@ -165,8 +178,12 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
           throwIfAborted();
           try {
             await fsAccess(absolutePath, constants.R_OK | constants.W_OK);
-          } catch {
-            throw toolError(fileNotFoundError(group.path));
+          } catch (err) {
+            const code =
+              err && typeof err === 'object' && 'code' in err
+                ? `${(err as { code?: unknown }).code}`
+                : String(err);
+            throw toolError(fileNotFoundError(`${group.path}. ${code}`));
           }
 
           throwIfAborted();
@@ -199,6 +216,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
             matchPasses: result.matchPasses,
             diff: diffResult.diff ?? '',
             firstChangedLine: diffResult.firstChangedLine ?? 0,
+            patch: generateUnifiedPatch(group.path, content, result.content),
             warnings,
           };
         });
@@ -213,6 +231,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
         matchPasses.push(...fileResult.matchPasses);
         if (!primaryDiff) {
           primaryDiff = fileResult.diff;
+          primaryPatch = fileResult.patch;
           primaryFirstChangedLine = fileResult.firstChangedLine;
         }
       }
@@ -227,6 +246,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
         content: [{ type: 'text' as const, text: text.join('\n') }],
         details: {
           diff: primaryDiff,
+          patch: primaryPatch,
           firstChangedLine: primaryFirstChangedLine,
           matchPasses,
         },
