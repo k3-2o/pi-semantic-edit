@@ -1,7 +1,7 @@
 {
   "name": "pi-semantic-edit",
   "version": "0.1.0",
-  "description": "Semantic search/replace edit tool for Pi \u2014 model-agnostic, meaning-aware matching that replaces the built-in edit.",
+  "description": "Aider-format SEARCH/REPLACE edit tool for Pi \u2014 OpenDev 9-pass fuzzy matcher chain, uniqueness guard, stale-read detection, zero runtime deps. Replaces the built-in edit.",
   "type": "module",
   "main": "index.ts",
   "types": "index.ts",
@@ -42,16 +42,14 @@
   },
   "keywords": [
     "pi-package",
-    "semantic-replace",
+    "aider-format",
+    "search-replace-blocks",
+    "fuzzy-matching",
     "model-agnostic",
     "code-editing",
     "intent-resolution",
-    "search-replace-blocks",
-    "anchor-matching",
-    "coherence-check",
-    "joint-scoring",
-    "token-fingerprint",
     "zero-dependencies",
-    "pi-coding-agent"
+    "pi-coding-agent",
+    "semantic-edit"
   ]
 }
