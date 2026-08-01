@@ -22,3 +22,6 @@ node_modules/
 # Environment
 .env
 *.local
+
+# Deep docs — not needed at runtime
+/docs/
