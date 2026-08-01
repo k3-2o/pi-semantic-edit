@@ -110,13 +110,15 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       'If the SEARCH text matches multiple locations, the edit fails with the line ' +
       'positions and asks for more context — it never guesses. Format:\n' +
       AIDER_FORMAT_EXAMPLE,
-    promptSnippet: 'Edit files using aider-format SEARCH/REPLACE blocks',
+    promptSnippet:
+      'Edit files using aider-format SEARCH/REPLACE blocks, including multiple blocks in one call',
     promptGuidelines: [
-      'Use edit for file changes. Provide the file path on its own line, then a fenced block with <<<<<<< SEARCH, the exact current code, =======, the replacement code, and >>>>>>> REPLACE.',
-      'The matcher tolerates minor whitespace, indentation, line-ending, and escape differences — but copy the code as accurately as you can.',
-      'If the SEARCH text appears in multiple places, include more surrounding context so it matches exactly one location.',
-      'Multiple blocks may appear in one patch, each with its own file path.',
-      'If the edit fails, read the reported error carefully — it shows what was actually found in the file. Correct and retry.',
+      'Use edit for file changes. Provide the file path on its own line, then a block: <<<<<<< SEARCH, the exact current code, =======, the replacement code, >>>>>>> REPLACE.',
+      'When changing multiple separate locations in a file, use multiple blocks in one edit call instead of multiple edit calls.',
+      'Each SEARCH block is matched against the original file, not after earlier blocks are applied. Do not emit overlapping or nested blocks; merge nearby changes into one block.',
+      'Keep the SEARCH text as small as possible while still being unique in the file. Do not pad with large unchanged regions.',
+      'The matcher tolerates minor whitespace, indentation, line-ending, escape, and Unicode drift — but copy the code as accurately as you can.',
+      'If the SEARCH text matches multiple locations, the edit fails with the line positions — include more surrounding context. If nothing matches, the error shows the closest text actually in the file; correct against that and retry.',
     ],
     parameters: editToolSchema,
     renderShell: 'self' as const,
