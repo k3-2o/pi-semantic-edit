@@ -1,6 +1,6 @@
 {
   "name": "pi-semantic-edit",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Aider-format SEARCH/REPLACE edit tool for Pi \u2014 OpenDev 9-pass fuzzy matcher chain, uniqueness guard, stale-read detection, zero runtime deps. Replaces the built-in edit.",
   "type": "module",
   "main": "index.ts",
