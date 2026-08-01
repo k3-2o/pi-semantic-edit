@@ -3,7 +3,7 @@ import { findMatch, findOccurrencePositions } from '../src/domain/chain';
 import { REPLACER_CHAIN } from '../src/domain/passes';
 
 describe('REPLACER_CHAIN', () => {
-  it('has exactly 9 passes in OpenDev order', () => {
+  it('has 10 passes: 9 OpenDev in order, then our unicode pass', () => {
     expect(REPLACER_CHAIN.map((p) => p.name)).toEqual([
       'simple',
       'line_trimmed',
@@ -14,6 +14,7 @@ describe('REPLACER_CHAIN', () => {
       'trimmed_boundary',
       'context_aware',
       'multi_occurrence',
+      'unicode_normalized',
     ]);
   });
 });
@@ -35,6 +36,15 @@ describe('findMatch chain behavior', () => {
     const result = findMatch('a\r\nb\r\nc', 'a\nb');
     expect(result).not.toBeNull();
     expect(result!.actual).toBe('a\nb');
+  });
+
+  it('unicode pass catches single-line curly-quote drift (pass 10)', () => {
+    // The smoke-test #9 single-line case: passes 1-9 all fail, unicode catches it
+    const original = 'const config = {\n  name: "demo",\n  retries: 3,\n};';
+    const result = findMatch(original, '  name: \u201cdemo\u201d,');
+    expect(result).not.toBeNull();
+    expect(result!.passName).toBe('unicode_normalized');
+    expect(result!.actual).toBe('  name: "demo",'); // verbatim original returned
   });
 
   it('returns null when nothing matches', () => {

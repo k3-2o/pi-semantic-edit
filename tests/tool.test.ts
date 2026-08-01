@@ -120,13 +120,16 @@ describe('edit tool execute', () => {
   });
 
   it('fails with ambiguous error and line positions on duplicates', async () => {
-    await writeFixture('dup.ts', 'foo\nbar\nfoo\n');
+    // Two 'foo' occurrences on the SAME line: auto-expand is structurally
+    // impossible — both occurrences expand to the whole line → both unique
+    // simultaneously → genuinely ambiguous → error.
+    await writeFixture('dup.ts', 'foo foo\n');
     const err = await tool
       .execute('1', { patch: patchFor('dup.ts', 'foo', 'baz') }, undefined, undefined, {})
       .then(() => null)
       .catch((e) => e);
     expect((err as Error).message).toContain('found 2 times');
-    expect((err as Error).message).toContain('line 1, line 3');
+    expect((err as Error).message).toContain('line 1, line 1');
     expect(err.editError.kind).toBe('ambiguous');
   });
 

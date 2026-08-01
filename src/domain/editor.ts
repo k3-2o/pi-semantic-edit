@@ -13,7 +13,10 @@ import {
   validationError,
 } from './errors';
 import { reportOccurrences } from './uniqueness';
-import type { EditError, FailedEdit, ParsedBlock, ResolvedEdit } from './types';
+import type { EditError, FailedEdit, MatchResult, ParsedBlock, ResolvedEdit } from './types';
+
+/** Auto-expand cap: total lines added around a match (half above, half below). */
+const MAX_EXPAND_LINES = 10;
 
 export interface ResolveBlocksResult {
   ok: boolean;
@@ -54,6 +57,11 @@ export function resolveBlocks(
 
     const report = reportOccurrences(content, match.actual);
     if (report.ambiguous) {
+      const expanded = tryAutoExpand(content, block, path, match.actual);
+      if (expanded) {
+        resolved.push(expanded);
+        continue;
+      }
       return { ok: false, error: ambiguousError(path, report.count, report.positions) };
     }
 
@@ -115,4 +123,115 @@ function failureToError(f: FailedEdit): EditError {
     case 'invariant':
       return validationError(f.reason);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-expand disambiguation (spec §5.3, decided Phase 2)
+//
+// When the model's SEARCH text matches multiple locations, grow context
+// symmetrically (alternating: line above, line below) around EVERY occurrence
+// until exactly ONE occurrence's expanded block is unique in the file. The
+// replacement applies to the ORIGINAL (unexpanded) span — expansion is only
+// for locating the right occurrence. If multiple occurrences become unique
+// simultaneously, they're genuinely indistinguishable → ambiguous error.
+// ---------------------------------------------------------------------------
+
+function tryAutoExpand(
+  content: string,
+  block: ParsedBlock,
+  path: string,
+  actual: string,
+): ResolvedEdit | null {
+  const spans = findAllSpans(content, actual);
+  if (spans.length < 2) return null;
+
+  const lines = content.split('\n');
+  const lineRanges = spans.map((s) => ({
+    startLine: lineIndexAt(lines, s.start),
+    endLine: lineIndexAt(lines, s.end - 1),
+  }));
+
+  let above = 0;
+  let below = 0;
+  const half = Math.floor(MAX_EXPAND_LINES / 2);
+  const maxLevel = MAX_EXPAND_LINES;
+
+  for (let level = 0; level < maxLevel; level++) {
+    // Expand alternately: above, below, above, below…
+    if (level % 2 === 0) {
+      if (above >= half) continue;
+      above++;
+    } else {
+      if (below >= half) continue;
+      below++;
+    }
+
+    const expandedBlocks = lineRanges.map(({ startLine, endLine }) => {
+      const s = Math.max(0, startLine - above);
+      const e = Math.min(lines.length, endLine + 1 + below);
+      return lines.slice(s, e).join('\n');
+    });
+
+    const uniqueIdx = findSingleUnique(expandedBlocks, content);
+    if (uniqueIdx !== null) {
+      const span = spans[uniqueIdx];
+      return {
+        edit: { path, oldText: block.oldText, newText: block.newText },
+        match: { actual, passName: 'auto_expand' } satisfies MatchResult,
+        start: span.start,
+        end: span.end,
+      };
+    }
+    // If MULTIPLE candidates are already unique, further expansion keeps them
+    // unique forever (a unique block stays unique under extension) — bail.
+    if (expandedBlocks.filter((b) => countOccurrences(content, b) === 1).length > 1) return null;
+  }
+  return null;
+}
+
+function findAllSpans(content: string, needle: string): { start: number; end: number }[] {
+  const spans: { start: number; end: number }[] = [];
+  let from = 0;
+  while (from <= content.length) {
+    const idx = content.indexOf(needle, from);
+    if (idx === -1) break;
+    spans.push({ start: idx, end: idx + needle.length });
+    from = idx + 1;
+  }
+  return spans;
+}
+
+function countOccurrences(content: string, needle: string): number {
+  let count = 0;
+  let from = 0;
+  while (from <= content.length) {
+    const idx = content.indexOf(needle, from);
+    if (idx === -1) break;
+    count++;
+    from = idx + 1;
+  }
+  return count;
+}
+
+/** Index of the line containing char `offset` in `lines` (joined by \n). */
+function lineIndexAt(lines: string[], offset: number): number {
+  let remaining = offset;
+  for (let i = 0; i < lines.length; i++) {
+    const len = lines[i].length + (i < lines.length - 1 ? 1 : 0);
+    if (remaining < len) return i;
+    remaining -= len;
+  }
+  return lines.length - 1;
+}
+
+/** Index of the candidate whose expanded block occurs exactly once, or null. */
+function findSingleUnique(blocks: string[], content: string): number | null {
+  let uniqueIdx: number | null = null;
+  for (let i = 0; i < blocks.length; i++) {
+    if (countOccurrences(content, blocks[i]) === 1) {
+      if (uniqueIdx !== null) return null; // more than one unique → ambiguous
+      uniqueIdx = i;
+    }
+  }
+  return uniqueIdx;
 }

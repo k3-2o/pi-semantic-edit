@@ -280,6 +280,76 @@ export function multiOccurrenceFind(original: string, oldContent: string): strin
 }
 
 // ---------------------------------------------------------------------------
+// Pass 10: UnicodeNormalized — normalize both sides for matching
+// ---------------------------------------------------------------------------
+//
+// Our addition (spec §5.3, decided Phase 2). Two layers:
+//   1. NFKC — handles NBSP→space, ligatures (ﬁ→fi), compatibility forms.
+//   2. Explicit punctuation map — NFKC does NOT touch typographic quotes or
+//      dashes (no compatibility decomposition exists), so we map curly quotes
+//      → straight and en/em dash → hyphen ourselves.
+// Matching-ONLY — the returned `actual` is always verbatim original text
+// (safety invariant), so normalization can never alter the file. Placed AFTER
+// the 9 OpenDev passes so parity pass-name expectations are unchanged.
+
+const PUNCT_MAP: Record<string, string> = {
+  '\u2018': "'", // ‘ left single quote
+  '\u2019': "'", // ’ right single quote
+  '\u201A': "'", // ‚ single low-9 quote
+  '\u201B': "'", // ‛ single high-reversed-9 quote
+  '\u201C': '"', // “ left double quote
+  '\u201D': '"', // ” right double quote
+  '\u201E': '"', // „ double low-9 quote
+  '\u201F': '"', // ‟ double high-reversed-9 quote
+  '\u2013': '-', // – en dash
+  '\u2014': '-', // — em dash
+};
+
+function normalizeText(s: string): string {
+  return s
+    .normalize('NFKC')
+    .replace(
+      /[\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u2013\u2014]/g,
+      (c) => PUNCT_MAP[c] ?? c,
+    );
+}
+
+/** True if every char in `s` is ASCII (fast skip for the common case). */
+function isAscii(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) > 127) return false;
+  }
+  return true;
+}
+
+/** Map an index in the normalized form of `s` back to an index in `s`. */
+function mapNormalizedIndex(s: string, normIndex: number): number {
+  let consumed = 0;
+  for (let i = 0; i < s.length; i++) {
+    const n = normalizeText(s[i]).length;
+    if (consumed + n > normIndex) return i;
+    consumed += n;
+    if (consumed === normIndex) return i + 1;
+  }
+  return s.length;
+}
+
+export function unicodeNormalizedFind(original: string, oldContent: string): string | null {
+  const normOld = normalizeText(oldContent);
+  // Skip when the query is already normalized AND the file is pure ASCII —
+  // nothing could possibly change. (Non-ASCII files run even with a plain
+  // query: the file itself may hold ligatures/quotes.)
+  if (normOld === oldContent && isAscii(original)) return null;
+  const normOrig = normalizeText(original);
+  const idx = normOrig.indexOf(normOld);
+  if (idx === -1) return null;
+  const start = mapNormalizedIndex(original, idx);
+  const end = mapNormalizedIndex(original, idx + normOld.length);
+  const actual = original.slice(start, end);
+  return original.includes(actual) ? actual : null;
+}
+
+// ---------------------------------------------------------------------------
 // Chain registry — single source of truth for pass order (OpenDev parity)
 // ---------------------------------------------------------------------------
 
@@ -298,4 +368,5 @@ export const REPLACER_CHAIN: readonly Replacer[] = [
   { name: 'trimmed_boundary', find: trimmedBoundaryFind },
   { name: 'context_aware', find: contextAwareFind },
   { name: 'multi_occurrence', find: multiOccurrenceFind },
+  { name: 'unicode_normalized', find: unicodeNormalizedFind },
 ];

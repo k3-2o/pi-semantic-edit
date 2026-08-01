@@ -13,6 +13,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import type { EditError, ParsedBlock } from '../domain/types';
 import { applyBlocks } from '../domain/editor';
+import { coherenceCheck } from '../domain/coherence';
 import { MalformedPatchError, parseAiderBlocks } from '../domain/parser';
 import {
   fileNotFoundError,
@@ -176,6 +177,8 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
           const result = applyBlocks(content, group.blocks, group.path);
           if (!result.ok || result.content === undefined) throw toolError(result.error!);
 
+          const warnings = coherenceCheck(result.content);
+
           const finalContent = bom + restoreLineEndings(result.content, ending);
 
           // Atomic write: temp file + rename (same directory).
@@ -192,12 +195,17 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
             matchPasses: result.matchPasses,
             diff: diffResult.diff ?? '',
             firstChangedLine: diffResult.firstChangedLine ?? 0,
+            warnings,
           };
         });
 
         summaries.push(
           `Successfully replaced ${fileResult.appliedCount} block(s) in ${group.path}.`,
         );
+        if (fileResult.warnings.length > 0) {
+          summaries.push('Coherence warnings:');
+          for (const w of fileResult.warnings) summaries.push(`  - ${w}`);
+        }
         matchPasses.push(...fileResult.matchPasses);
         if (!primaryDiff) {
           primaryDiff = fileResult.diff;
