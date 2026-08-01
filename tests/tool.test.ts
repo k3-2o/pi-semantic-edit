@@ -206,6 +206,24 @@ describe('edit tool execute', () => {
     expect(err.editError.kind).toBe('missing-path');
   });
 
+  it('resolves paths against the SESSION cwd, not the load cwd', async () => {
+    // Simulate the reported bug: pi launched from a different directory than
+    // the session's working dir. The tool is created with a bogus load cwd;
+    // execute receives ctx.cwd = the real temp dir → must still work.
+    const realDir = dir;
+    const bogusTool = createRobustEditTool('/nonexistent-launch-dir', {} as never, registry);
+    await writeFixture('session-cwd.ts', 'let a = 1;\n');
+    const result = await bogusTool.execute(
+      '1',
+      { patch: patchFor('session-cwd.ts', 'let a = 1;', 'let a = 2;') },
+      undefined,
+      undefined,
+      { cwd: realDir },
+    );
+    expect(result.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(join(dir, 'session-cwd.ts'), 'utf-8')).toBe('let a = 2;\n');
+  });
+
   it('prepareArguments converts legacy edits[] shape to a patch', async () => {
     const prepared = tool.prepareArguments({
       path: 'legacy.ts',

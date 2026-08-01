@@ -123,11 +123,15 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       input: { patch: string },
       signal: AbortSignal | undefined,
       _onUpdate: unknown,
-      _ctx: unknown,
+      ctx: { cwd?: string } | undefined,
     ) {
       const throwIfAborted = () => {
         if (signal?.aborted) throw new Error('Operation aborted');
       };
+
+      // Resolve paths against the SESSION working directory, not the
+      // extension-load cwd — they differ when pi is launched elsewhere.
+      const baseCwd = ctx?.cwd ?? cwd;
 
       // ---- Parse + validate ----
       let blocks: ParsedBlock[];
@@ -151,7 +155,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       let primaryFirstChangedLine = 0;
 
       for (const group of groupByPath(blocks)) {
-        const absolutePath = resolveToCwd(group.path, cwd);
+        const absolutePath = resolveToCwd(group.path, baseCwd);
         throwIfAborted();
 
         const stale = registry.assertFresh(absolutePath);
