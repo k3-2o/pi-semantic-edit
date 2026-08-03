@@ -74,6 +74,13 @@ export function resolveBlocks(
         };
       }
       for (const span of spans) {
+        // A fuzzy pass can over-reach even for a 1-line query (unicode pass
+        // when NFKC/quote normalization changes lengths) — guard per span,
+        // because the outer check's 1-line exemption is pass-blind.
+        const actual = content.slice(span.start, span.end);
+        if (isDisproportionateMatch(actual, block.oldText)) {
+          return { ok: false, error: disproportionateError(path) };
+        }
         resolved.push({
           edit: { path, oldText: block.oldText, newText: block.newText },
           match: { ...match, passName: spans.length > 1 ? 'replace_all' : match.passName },
