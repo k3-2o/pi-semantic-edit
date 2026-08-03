@@ -4,3 +4,4 @@ dist/
 *.local
 .vscode/
 AGENT.md
+AUDIT-FINDINGS.md

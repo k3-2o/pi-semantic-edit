@@ -85,4 +85,19 @@ describe('ReadRegistry', () => {
     expect(reg.lastRead('/a.ts')).toBeUndefined();
     expect(reg.isFresh('/a.ts')).toBe(true);
   });
+
+  it('stat throwing (file deleted after read) is treated as stale, not a crash', () => {
+    const reg = new ReadRegistry({
+      now: () => 1000,
+      stat: () => {
+        throw new Error('ENOENT: deleted');
+      },
+    });
+    reg.record('/deleted.ts');
+    expect(reg.isFresh('/deleted.ts')).toBe(false);
+    const err = reg.assertFresh('/deleted.ts');
+    expect(err).not.toBeNull();
+    expect(err!.kind).toBe('stale-read');
+    expect(err!.message).toContain('changed since you last read it');
+  });
 });

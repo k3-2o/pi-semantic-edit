@@ -45,7 +45,14 @@ export class ReadRegistry {
   isFresh(path: string): boolean {
     const readAt = this.reads.get(path);
     if (readAt === undefined) return true;
-    const mtime = this.stat(path).mtimeMs;
+    let mtime: number;
+    try {
+      mtime = this.stat(path).mtimeMs;
+    } catch {
+      // stat can throw if the file was deleted after the agent read it — treat
+      // as stale (the edit cannot target a file that no longer exists).
+      return false;
+    }
     return mtime <= readAt + this.toleranceMs;
   }
 
