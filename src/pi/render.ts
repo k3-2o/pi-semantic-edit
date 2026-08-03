@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// TUI rendering — adapted from the old experiment's proven render machinery
-// (which matched Pi's built-in edit rendering exactly) to patch-only input.
+// --- TUI rendering — mirrors Pi's built-in edit rendering ---
 
 import { readFile, access as fsAccess } from 'fs/promises';
 import { constants } from 'fs';
@@ -40,7 +39,6 @@ function linkPath(styledText: string, rawPath: string | null, cwd: string): stri
   );
 }
 
-/** First file path referenced by the args (for the call header). */
 function firstPatchPath(input: unknown): string | null {
   if (typeof input !== 'object' || input === null) return null;
   const args = input as Record<string, unknown>;
@@ -232,7 +230,7 @@ export function createEditRenderers() {
   };
 }
 
-// ---- Preview computation (async, mirrors built-in) ---- //
+// --- Preview computation (async, mirrors built-in) ---
 
 async function computePreviewDiff(input: unknown, cwd: string): Promise<EditPreview> {
   try {
@@ -242,8 +240,7 @@ async function computePreviewDiff(input: unknown, cwd: string): Promise<EditPrev
     }
     const first = reqs[0];
     if (!first.path) return { error: 'Each edit must specify a path.' };
-    // Resolve the same way the tool does (session cwd, ~ expansion) so the
-    // preview and apply agree on the path.
+    // --- Resolve like the tool (session cwd, ~ expansion) so preview and apply agree ---
     const absolutePath = resolveToCwd(first.path, cwd);
     await fsAccess(absolutePath, constants.R_OK);
     const rawContent = await readFile(absolutePath, 'utf-8');

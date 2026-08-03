@@ -1,6 +1,3 @@
-// Pi extension entry — registers the `edit` tool (shadows the built-in) and
-// installs the read observer for stale-read tracking.
-
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { statSync } from 'node:fs';
 import { ReadRegistry } from './src/domain/stale-read';

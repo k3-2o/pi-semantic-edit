@@ -1,74 +1,39 @@
 # pi-semantic-edit
 
-> A drop-in replacement for Pi's built-in `edit` tool. Same `edits[]` contract, same model-facing behavior — but the matcher tolerates the drift models actually produce, and the failure messages tell the model exactly what to fix.
+Drop-in replacement for Pi's built-in `edit`. Same `edits[]` contract, so the model keeps writing the calls it already writes. What changes is what happens after the call: the matcher absorbs the drift models actually produce, and failures say what to fix instead of bouncing the model into a blind retry.
 
-## Features
+```json
+{ "path": "src/foo.ts", "edits": [{ "oldText": "let x = 1;", "newText": "let x = 2;" }] }
+```
 
-- **Pi's built-in contract** — `{ path, edits: [{ oldText, newText, replaceAll? }] }`. The model writes the same shape it already uses for Pi's built-in edit; nothing new to learn.
-- **`replaceAll` escape hatch** — set `replaceAll: true` on an edit to replace every occurrence (renames, repeated patterns) instead of failing on ambiguity.
-- **10-pass fuzzy matcher** — exact match first, then progressively tolerant passes for whitespace, indentation, escapes, and Unicode drift (smart quotes, dashes, non-breaking spaces).
-- **Never guesses** — ambiguous matches fail with the exact line positions; a fuzzy pass can never match a span far larger than the query (disproportionate-match refusal).
-- **Stale-read protection** — rejects edits to files that changed since the model last read them.
-- **Zero runtime dependencies** — Node/Bun built-ins only.
+## Why you'd install it
 
-## Quick Start
+The built-in edit is strict. `oldText` has to match the file byte for byte, and when it doesn't the model retries in the dark. This one runs the text through a 10-pass fuzzy chain (line trim, indentation, escaped sequences, Unicode quotes and dashes) before giving up. Every pass re-verifies its match against the actual file, so tolerance never turns into an edit at the wrong location.
+
+Two behaviors the built-in lacks:
+
+- `replaceAll: true` on an edit replaces every occurrence. That's what renames actually need; without it a multi-match fails with the line positions and you add context.
+- Stale-read rejection. If the file changed since the model last read it, the edit is refused with a re-read message instead of silently landing on stale content.
+
+On no-match the error quotes the closest real text plus a similarity percentage, so the retry targets what's actually in the file, not what the model remembers.
+
+## Install
 
 ```bash
-# Install
 pi install npm:pi-semantic-edit
-
-# Or try it without installing
-pi -e npm:pi-semantic-edit
 ```
 
-Pi packages run with full system access — review the source before using.
+That's it. `edit` now resolves to this tool.
 
-Once loaded, the tool replaces Pi's built-in `edit`. The model calls `edit` with `path` and `edits[]`:
+## Legacy input
 
-```json
-{ "path": "src/foo.ts", "edits": [{ "oldText": "let x = 1;", "newText": "let x = 2;" }] }
-```
+Aider-format `patch` blocks still work for sessions that started on older versions, but they're deprecated. New sessions should use `edits[]`.
 
-## Usage
+## Docs
 
-Edit a file by describing each change as an exact-text replacement:
-
-```json
-{ "path": "src/foo.ts", "edits": [{ "oldText": "let x = 1;", "newText": "let x = 2;" }] }
-```
-
-Multiple disjoint edits in one call:
-
-```json
-{
-  "path": "src/a.ts",
-  "edits": [
-    { "oldText": "alpha", "newText": "ALPHA" },
-    { "oldText": "beta", "newText": "BETA" }
-  ]
-}
-```
-
-Replace every occurrence of a token (rename a variable):
-
-```json
-{
-  "path": "src/a.ts",
-  "edits": [{ "oldText": "total", "newText": "sumTotal", "replaceAll": true }]
-}
-```
-
-The matcher tolerates minor drift between `oldText` and the file — trailing whitespace, indentation, line endings, escaped sequences, and typographic quotes all normalize during matching.
-
-If `oldText` matches more than one location, the edit fails with the line positions and asks for more context — the file is left untouched. If nothing matches, the error shows the closest text actually in the file so the correction can target reality.
-
-> **Legacy:** aider-format SEARCH/REPLACE `patch` input is still accepted (for sessions that started on earlier versions) but deprecated. The model-facing contract is `edits[]`.
-
-## Documentation
-
-- [Reference](https://github.com/k3-2o/pi-semantic-edit/blob/main/docs/REFERENCE.md) — input format, matcher passes, safety behaviors, error behavior
-- [Explanation](https://github.com/k3-2o/pi-semantic-edit/blob/main/docs/EXPLANATION.md) — why the format and the matcher are designed this way
+- [Reference](https://github.com/k3-2o/pi-semantic-edit/blob/main/docs/REFERENCE.md): input format, matcher passes, safety behaviors, errors
+- [Explanation](https://github.com/k3-2o/pi-semantic-edit/blob/main/docs/EXPLANATION.md): why the matcher is built this way
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

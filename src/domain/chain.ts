@@ -2,10 +2,7 @@ import { REPLACER_CHAIN } from './passes';
 import type { MatchResult } from './types';
 import { normalizeNewlines } from './utils';
 
-/**
- * Run the replacer chain in order, short-circuiting on the first match.
- * Line endings are normalized first (port of OpenDev's find_match()).
- */
+// --- Run the replacer chain in order, short-circuit on first match (OpenDev find_match parity) ---
 export function findMatch(original: string, oldContent: string): MatchResult | null {
   const orig = normalizeNewlines(original);
   const old = normalizeNewlines(oldContent);
@@ -19,7 +16,7 @@ export function findMatch(original: string, oldContent: string): MatchResult | n
   return null;
 }
 
-/** 1-indexed line numbers of every occurrence of `needle` in `haystack`. */
+// --- 1-indexed line numbers of every occurrence of needle in haystack ---
 export function findOccurrencePositions(haystack: string, needle: string): number[] {
   const positions: number[] = [];
   let searchPos = 0;

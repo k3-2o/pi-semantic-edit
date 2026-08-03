@@ -1,6 +1,4 @@
-// Pure error/message builders. All messages are strings derived from domain
-// results — no Pi imports, unit-testable. The pi/tool layer wires these into
-// tool output.
+// --- Pure error/message builders — strings from domain results, no Pi imports; tool layer wires them ---
 
 import { formatLinePositions } from './uniqueness';
 import type { ClosestCandidate, EditError } from './types';
@@ -55,7 +53,7 @@ export function malformedPatchError(message: string, lineIndex?: number): EditEr
   const at = lineIndex !== undefined ? ` (line ${lineIndex + 1})` : '';
   return {
     kind: 'malformed-patch',
-    message: `Malformed SEARCH/REPLACE patch${at}: ${message}`, // deprecated aider input only
+    message: `Malformed SEARCH/REPLACE patch${at}: ${message}`, // --- deprecated aider input only ---
   };
 }
 
@@ -108,7 +106,6 @@ export function validationError(message: string): EditError {
   return { kind: 'validation', message };
 }
 
-/** Truncate multi-line candidate text for a compact error preview. */
 function abbreviate(text: string, maxLines = 8, maxCols = 80): string {
   const lines = text.split('\n').slice(0, maxLines);
   const abridged = lines.map((l) => (l.length > maxCols ? l.slice(0, maxCols) + '…' : l));

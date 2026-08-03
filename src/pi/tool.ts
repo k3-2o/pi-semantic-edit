@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// The Pi adapter tool — schema, execute orchestration, error wiring.
-// All heavy logic lives in the domain layer; this file only coordinates.
+// --- Pi adapter — schema, execute orchestration, error wiring; heavy logic lives in the domain layer ---
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'fs';
@@ -28,7 +27,7 @@ import { editToolSchema, type EditToolInput } from './schema';
 import { normalizeEditArgs, type EditRequestLike } from './normalize';
 import { createEditRenderers } from './render';
 
-/** Throw an Error carrying a structured EditError (for renderers/debugging). */
+// --- Throw an Error carrying a structured EditError (for renderers/debugging) ---
 function toolError(error: EditError): Error {
   return Object.assign(new Error(error.message), { editError: error });
 }
@@ -38,7 +37,7 @@ interface FileGroup {
   blocks: EditRequestLike[];
 }
 
-/** Group requests by path, preserving first-seen order. */
+// --- Group requests by path, preserving first-seen order ---
 function groupByPath(blocks: EditRequestLike[]): FileGroup[] {
   const groups: FileGroup[] = [];
   const index = new Map<string, number>();
@@ -54,7 +53,7 @@ function groupByPath(blocks: EditRequestLike[]): FileGroup[] {
   return groups;
 }
 
-/** Creates the `edit` tool — shadows Pi's built-in (SPEC D1). */
+// --- Creates the `edit` tool — shadows Pi's built-in (SPEC D1) ---
 export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: ReadRegistry) {
   const renderers = createEditRenderers();
 
@@ -85,7 +84,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
     prepareArguments(input: any) {
       if (!input || typeof input !== 'object') return input;
       if (typeof input.patch === 'string') {
-        // Deprecated aider input — normalize here too so execute stays uniform.
+        // --- Deprecated aider input — normalize here too so execute stays uniform ---
         const reqs = normalizeEditArgs(input);
         return reqs ? { path: reqs[0]?.path ?? '', edits: reqs } : input;
       }
@@ -108,11 +107,9 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
         if (signal?.aborted) throw new Error('Operation aborted');
       };
 
-      // Resolve paths against the SESSION working directory, not the
-      // extension-load cwd — they differ when pi is launched elsewhere.
+      // --- Resolve against the SESSION cwd, not the extension-load cwd — they differ when pi is launched elsewhere ---
       const baseCwd = ctx?.cwd ?? cwd;
 
-      // ---- Parse + validate ----
       const blocks = normalizeEditArgs(input);
       if (!blocks || blocks.length === 0) {
         throw toolError(
@@ -123,7 +120,6 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
         throw toolError(validationError('Each edit must specify a path.'));
       }
 
-      // ---- Execute per file group (fail-fast, per-file mutation queue) ----
       const summaries: string[] = [];
       const matchPasses: string[] = [];
       let primaryDiff = '';
@@ -154,7 +150,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
           try {
             buffer = await readFile(absolutePath);
           } catch (err) {
-            // File vanished or became unreadable after access — re-read is the fix.
+            // --- File vanished or became unreadable after access — re-read is the fix ---
             const code =
               err && typeof err === 'object' && 'code' in err
                 ? `${(err as { code?: unknown }).code}`
@@ -169,8 +165,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
           const rawContent = buffer.toString('utf-8');
           const { bom, text } = stripBom(rawContent);
           const ending = detectLineEnding(text);
-          // CRLF pitfall fix (see research README): match AND apply on
-          // LF-normalized content, restore the original endings on write.
+          // --- CRLF pitfall: match AND apply on LF-normalized content, restore original endings on write ---
           const content = normalizeNewlines(text);
 
           const result = applyBlocks(content, group.blocks, group.path);
@@ -180,12 +175,12 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
 
           const finalContent = bom + restoreLineEndings(result.content, ending);
 
-          // Atomic write: temp file + rename (same directory).
+          // --- Atomic write: temp file + rename (same directory) ---
           const tmpPath = resolve(dirname(absolutePath), `.${randomUUID()}.tmp`);
           await writeFile(tmpPath, finalContent, 'utf-8');
           await rename(tmpPath, absolutePath);
 
-          // Our edit result contains the new file state → model's knowledge is fresh.
+          // --- Our edit result holds the new file state — model's knowledge is fresh ---
           registry.selfRefresh(absolutePath);
 
           const diffResult = generateDiffString(content, result.content);

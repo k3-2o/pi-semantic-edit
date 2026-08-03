@@ -1,11 +1,9 @@
-// Coherence verification — non-blocking structural warnings on the result
-// content (brace balance + indentation jumps). Warnings are advisory.
+// --- Non-blocking structural warnings on the result (brace balance + indent jumps) ---
 
 export function coherenceCheck(content: string): string[] {
   const warnings: string[] = [];
   const lines = content.split('\n');
 
-  // Brace/paren/bracket balance
   let balance = 0;
   for (const ch of content) {
     if (ch === '{' || ch === '(' || ch === '[') balance++;
@@ -18,11 +16,10 @@ export function coherenceCheck(content: string): string[] {
     warnings.push(`Too many closing braces/parens/brackets (excess: ${-balance}).`);
   }
 
-  // Indentation consistency: flag drastic jumps (>4 spaces) from the previous
-  // non-empty line.
+  // --- Flag drastic indent jumps (>4 spaces) vs. previous non-empty line ---
   for (let i = 1; i < lines.length; i++) {
     const indent = lines[i].search(/\S/);
-    if (indent < 0) continue; // blank line
+    if (indent < 0) continue;
 
     const prev = findPrevNonEmptyLine(lines, i);
     if (prev === -1) continue;

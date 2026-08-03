@@ -1,50 +1,41 @@
-// Shared domain types — pure, no Pi imports.
+// --- Shared domain types — pure, no Pi imports ---
 
-/** One parsed or constructed edit: find oldText in path, replace with newText. */
 interface Edit {
   path: string;
   oldText: string;
   newText: string;
 }
 
-/**
- * An edit as the model sends it (the tool's primary contract, SPEC D1):
- * Pi built-in `edits[]` shape + optional per-edit replaceAll escape hatch.
- * `replaceAll` replaces every occurrence of the matched text, skipping the
- * ambiguity error (OpenDev/OpenCode precedent).
- */
+// --- Primary contract (SPEC D1): built-in edits[] shape + optional replaceAll escape hatch (OpenDev/OpenCode precedent) ---
 export interface EditRequest extends Edit {
   replaceAll?: boolean;
 }
 
-/** A block parsed from an aider-format patch string (deprecated legacy input). */
+// --- Block parsed from an aider-format patch string (deprecated legacy input) ---
 export interface ParsedBlock {
   path: string;
   oldText: string;
   newText: string;
 }
 
-/**
- * A successful fuzzy match. `actual` is the substring found in the ORIGINAL
- * content (never the query text), so replacements preserve real formatting.
- */
+// --- Fuzzy match; actual is the ORIGINAL substring (never the query), so replacements preserve real formatting ---
 export interface MatchResult {
   actual: string;
-  passName: string; // which pass matched — for logging (OpenDev parity)
+  passName: string; // --- which pass matched (OpenDev parity) ---
 }
 
-/** A candidate near-miss for closest-candidate-on-failure feedback. */
+// --- Candidate near-miss for closest-candidate-on-failure feedback ---
 export interface ClosestCandidate {
   passName: string;
-  similarity: number; // 0..1
-  candidate: string; // real file text that was closest
-  startLine: number; // 1-indexed
-  endLine: number; // 1-indexed
+  similarity: number;
+  candidate: string;
+  startLine: number;
+  endLine: number;
 }
 
-/** Outcome of applying all edits to original content. */
+// --- Outcome of applying all edits to original content ---
 export interface ApplyResult {
-  content: string; // resulting content (success) or original (failure)
+  content: string; // --- resulting content (success) or original (failure) ---
   applied: AppliedEdit[];
   failed: FailedEdit[];
 }
@@ -54,7 +45,7 @@ interface AppliedEdit {
   match: MatchResult;
 }
 
-/** A matched edit with its located span in the (LF-normalized) content. */
+// --- Matched edit with its located span in the (LF-normalized) content ---
 export interface ResolvedEdit {
   edit: Edit;
   match: MatchResult;
@@ -70,7 +61,6 @@ export interface FailedEdit {
   kind: EditFailureKind;
 }
 
-/** Error kinds surfaced to the tool layer. */
 type EditErrorKind =
   | 'malformed-patch'
   | 'missing-path'
@@ -86,8 +76,8 @@ type EditErrorKind =
 export interface EditError {
   kind: EditErrorKind;
   message: string;
-  /** 1-indexed line positions for ambiguous matches. */
+  // --- 1-indexed line positions for ambiguous matches ---
   linePositions?: number[];
-  /** Best near-miss when nothing matched. */
+  // --- Best near-miss when nothing matched ---
   closestCandidate?: ClosestCandidate;
 }

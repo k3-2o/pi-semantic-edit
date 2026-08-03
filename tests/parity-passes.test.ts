@@ -11,8 +11,6 @@ import { findMatch, findOccurrencePositions } from '../src/domain/chain';
 import { similarity } from '../src/domain/similarity';
 import { normalizeNewlines } from '../src/domain/utils';
 
-// ---- Pass 1: Simple ----
-
 describe('parity: simple', () => {
   it('exact match', () => {
     const original = 'fn main() {\n    println!("hello");\n}';
@@ -28,8 +26,6 @@ describe('parity: simple', () => {
     expect(findMatch(original, 'nonexistent')).toBeNull();
   });
 });
-
-// ---- Pass 2: LineTrimmed ----
 
 describe('parity: line_trimmed', () => {
   it('extra indentation in original', () => {
@@ -51,8 +47,6 @@ describe('parity: line_trimmed', () => {
   });
 });
 
-// ---- Pass 3: BlockAnchor ----
-
 describe('parity: block_anchor', () => {
   it('middle differs', () => {
     const original = 'fn test() {\n    let a = 1;\n    let b = 2;\n    let c = 3;\n}';
@@ -73,8 +67,6 @@ describe('parity: block_anchor', () => {
   });
 });
 
-// ---- Pass 4: WhitespaceNormalized ----
-
 describe('parity: whitespace_normalized', () => {
   it('collapsed single line', () => {
     const original = 'let   x  =   1;';
@@ -94,8 +86,6 @@ describe('parity: whitespace_normalized', () => {
   });
 });
 
-// ---- Pass 5: IndentationFlexible ----
-
 describe('parity: indentation_flexible', () => {
   it('skips blank lines', () => {
     const original = 'fn foo() {\n\n    let x = 1;\n\n    let y = 2;\n}';
@@ -105,8 +95,6 @@ describe('parity: indentation_flexible', () => {
     expect(['line_trimmed', 'indentation_flexible']).toContain(result!.passName);
   });
 });
-
-// ---- Pass 6: EscapeNormalized ----
 
 describe('parity: escape_normalized', () => {
   it('literal \\n instead of newline', () => {
@@ -135,8 +123,6 @@ describe('parity: escape_normalized', () => {
   });
 });
 
-// ---- Pass 7: TrimmedBoundary ----
-
 describe('parity: trimmed_boundary', () => {
   it('boundary trim with line expansion', () => {
     const original = 'header\n  alpha_line\n  beta_line\nfooter';
@@ -156,8 +142,6 @@ describe('parity: trimmed_boundary', () => {
   });
 });
 
-// ---- Pass 8: ContextAware ----
-
 describe('parity: context_aware', () => {
   it('anchors match, middle differs', () => {
     const original =
@@ -170,8 +154,6 @@ describe('parity: context_aware', () => {
   });
 });
 
-// ---- Pass 9: MultiOccurrence ----
-
 describe('parity: multi_occurrence', () => {
   it('trimmed line-by-line match', () => {
     const original = '    fn foo() {\n        bar();\n    }';
@@ -182,8 +164,6 @@ describe('parity: multi_occurrence', () => {
     expect(result!.actual).toBe('    fn foo() {\n        bar();\n    }');
   });
 });
-
-// ---- Similarity helper ----
 
 describe('parity: similarity', () => {
   it('identical', () => {
@@ -200,8 +180,6 @@ describe('parity: similarity', () => {
   });
 });
 
-// ---- Line endings ----
-
 describe('parity: line endings', () => {
   it('normalize_line_endings', () => {
     expect(normalizeNewlines('a\r\nb\rc\n')).toBe('a\nb\nc\n');
@@ -216,8 +194,6 @@ describe('parity: line endings', () => {
     expect(result!.actual).toBe('line2');
   });
 });
-
-// ---- Edge cases ----
 
 describe('parity: edge cases', () => {
   it('empty old content matches via simple', () => {
@@ -235,8 +211,6 @@ describe('parity: edge cases', () => {
     expect(result!.actual).toBe(old);
   });
 });
-
-// ---- Occurrence finding ----
 
 describe('parity: find_occurrence_positions', () => {
   it('line numbers', () => {

@@ -15,8 +15,6 @@ import {
   whitespaceNormalizedFind,
 } from '../src/domain/passes';
 
-// ---- Pass 1: Simple ----
-
 describe('simpleFind', () => {
   it('returns oldContent on contains', () => {
     expect(simpleFind('abc', 'b')).toBe('b');
@@ -28,8 +26,6 @@ describe('simpleFind', () => {
     expect(simpleFind('abc', '')).toBe('');
   });
 });
-
-// ---- Pass 2: LineTrimmed ----
 
 describe('lineTrimmedFind', () => {
   it('matches trailing-space drift', () => {
@@ -50,8 +46,6 @@ describe('lineTrimmedFind', () => {
     expect(lineTrimmedFind(original, 'x')).toBeNull();
   });
 });
-
-// ---- Pass 3: BlockAnchor ----
 
 describe('blockAnchorFind', () => {
   it('requires >= 3 lines', () => {
@@ -80,8 +74,6 @@ describe('blockAnchorFind', () => {
   });
 });
 
-// ---- Pass 4: WhitespaceNormalized ----
-
 describe('whitespaceNormalizedFind', () => {
   it('collapses whitespace runs per line', () => {
     const original = 'let   x  =   1;';
@@ -95,8 +87,6 @@ describe('whitespaceNormalizedFind', () => {
     expect(whitespaceNormalizedFind(original, old)).toBe(original);
   });
 });
-
-// ---- Pass 5: IndentationFlexible ----
 
 describe('indentationFlexibleFind', () => {
   it('strips indentation and skips blank lines', () => {
@@ -112,8 +102,6 @@ describe('indentationFlexibleFind', () => {
     expect(indentationFlexibleFind(original, old)).toBe('let q = 1;\n\nlet r = 2;');
   });
 });
-
-// ---- Pass 6: EscapeNormalized ----
 
 describe('escapeNormalizedFind', () => {
   it('unescapes \\n, \\t, \\\\, \\", \\\'', () => {
@@ -135,8 +123,6 @@ describe('escapeNormalizedFind', () => {
   });
 });
 
-// ---- Pass 7: TrimmedBoundary ----
-
 describe('trimmedBoundaryFind', () => {
   it('whole-block trim match', () => {
     expect(trimmedBoundaryFind('abc xyz def', '  xyz  ')).toBe('xyz');
@@ -154,8 +140,6 @@ describe('trimmedBoundaryFind', () => {
     expect(trimmedBoundaryFind('hello world', 'hello world')).toBeNull();
   });
 });
-
-// ---- Pass 8: ContextAware ----
 
 describe('contextAwareFind', () => {
   it('requires >= 2 lines', () => {
@@ -188,8 +172,6 @@ describe('contextAwareFind', () => {
   });
 });
 
-// ---- Pass 9: MultiOccurrence ----
-
 describe('multiOccurrenceFind', () => {
   it('trimmed line-by-line equality over exact window', () => {
     const original = '    fn foo() {\n        bar();\n    }';
@@ -204,8 +186,6 @@ describe('multiOccurrenceFind', () => {
     expect(multiOccurrenceFind(original, 'a\nb')).toBeNull();
   });
 });
-
-// ---- Chain invariant (across all passes) ----
 
 describe('safety invariant: actual is always verbatim in original', () => {
   const passFns = [

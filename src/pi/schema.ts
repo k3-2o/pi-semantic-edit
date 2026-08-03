@@ -1,9 +1,5 @@
-// Tool input schema — the model-facing contract (SPEC D1).
-//
-// Primary shape: Pi's built-in `edit` schema + one optional per-edit field:
-//   { path, edits: [{ oldText, newText, replaceAll? }] }
-// Aider `patch` is deprecated (session resume only) and NOT in the schema.
-// `replaceAll` is the escape hatch for rename-everywhere edits (OpenDev/OpenCode).
+// --- Tool input schema — the model-facing contract (SPEC D1) ---
+// --- Primary shape: built-in edit schema + optional per-edit replaceAll; aider patch deprecated, NOT in schema ---
 
 import { Type, type Static } from 'typebox';
 

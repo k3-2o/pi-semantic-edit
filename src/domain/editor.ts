@@ -1,5 +1,3 @@
-// Per-file edit orchestration: findMatch → uniqueness → closest-candidate → applyEdits.
-
 import { applyEdits } from './apply';
 import { findClosestCandidate } from './closest';
 import { findMatch } from './chain';
@@ -14,7 +12,7 @@ import {
 import { reportOccurrences } from './uniqueness';
 import type { EditError, EditRequest, FailedEdit, MatchResult, ResolvedEdit } from './types';
 
-/** Auto-expand cap: total lines added around a match (half above, half below). */
+// --- Auto-expand cap: total lines added around a match (half above, half below) ---
 const MAX_EXPAND_LINES = 10;
 
 export interface ResolveBlocksResult {
@@ -23,12 +21,7 @@ export interface ResolveBlocksResult {
   error?: EditError;
 }
 
-/**
- * Match every request against one content string (non-incremental — all
- * requests resolve against the ORIGINAL content). Returns the first error on
- * failure: empty search text, no match (with closest candidate), ambiguous
- * match (unless replaceAll), disproportionate match (OpenCode port).
- */
+// --- Match every request against ORIGINAL content (non-incremental) ---
 export function resolveBlocks(
   content: string,
   blocks: EditRequest[],
@@ -55,16 +48,12 @@ export function resolveBlocks(
       return { ok: false, error: notFoundError(path, closest ?? undefined) };
     }
 
-    // Disproportionate-match refusal (OpenCode isDisproportionateMatch port):
-    // a fuzzy pass must never match a span far larger than the model's query —
-    // that is a wrong-edit near-miss. Guarded before uniqueness.
+    // --- Refuse fuzzy matches spanning far more than the query — wrong-edit near-miss (OpenCode port) ---
     if (isDisproportionateMatch(match.actual, block.oldText)) {
       return { ok: false, error: disproportionateError(path) };
     }
 
-    // replaceAll: replace EVERY occurrence of the matched actual text — the
-    // escape hatch for rename-everywhere. Multiple spans never overlap
-    // (indexOf advances), so apply's bottom-up handling covers them unchanged.
+    // --- replaceAll: replace EVERY occurrence of the matched actual text; spans never overlap (indexOf advances) ---
     if (block.replaceAll) {
       const spans = findAllSpans(content, match.actual);
       if (spans.length === 0) {
@@ -74,9 +63,7 @@ export function resolveBlocks(
         };
       }
       for (const span of spans) {
-        // A fuzzy pass can over-reach even for a 1-line query (unicode pass
-        // when NFKC/quote normalization changes lengths) — guard per span,
-        // because the outer check's 1-line exemption is pass-blind.
+        // --- Fuzzy passes can over-reach even on 1-line queries (unicode pass) — guard per span ---
         const actual = content.slice(span.start, span.end);
         if (isDisproportionateMatch(actual, block.oldText)) {
           return { ok: false, error: disproportionateError(path) };
@@ -123,13 +110,12 @@ export interface ApplyBlocksResult {
   ok: boolean;
   content?: string;
   error?: EditError;
-  /** pass names per applied edit (OpenDev match_pass parity). */
+  // --- pass names per applied edit (OpenDev match_pass parity) ---
   matchPasses: string[];
-  /** total spans replaced (replaceAll can consume many for one edit). */
+  // --- total spans replaced (replaceAll can consume many for one edit) ---
   replacements: number;
 }
 
-/** Resolve + apply all blocks against one content string. */
 export function applyBlocks(
   content: string,
   blocks: EditRequest[],
@@ -164,14 +150,7 @@ function failureToError(f: FailedEdit): EditError {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Auto-expand disambiguation
-//
-// When SEARCH matches multiple locations, grow context symmetrically around
-// every occurrence until exactly ONE is unique. The replacement applies to the
-// ORIGINAL span — expansion only locates. Multiple simultaneously-unique
-// occurrences are genuinely indistinguishable → ambiguous error.
-// ---------------------------------------------------------------------------
+// --- Auto-expand: grow context around each occurrence until exactly ONE is unique; expansion only locates, the replacement targets the ORIGINAL span ---
 
 function tryAutoExpand(
   content: string,
@@ -194,7 +173,7 @@ function tryAutoExpand(
   const maxLevel = MAX_EXPAND_LINES;
 
   for (let level = 0; level < maxLevel; level++) {
-    // Expand alternately: above, below, above, below…
+    // --- Expand alternately: above, below, above, below… ---
     if (level % 2 === 0) {
       if (above >= half) continue;
       above++;
@@ -219,8 +198,7 @@ function tryAutoExpand(
         end: span.end,
       };
     }
-    // If MULTIPLE candidates are already unique, further expansion keeps them
-    // unique forever (a unique block stays unique under extension) — bail.
+    // --- Multiple uniques stay unique under extension — bail (genuine ambiguity) ---
     if (expandedBlocks.filter((b) => countOccurrences(content, b) === 1).length > 1) return null;
   }
   return null;
@@ -238,13 +216,7 @@ function findAllSpans(content: string, needle: string): { start: number; end: nu
   return spans;
 }
 
-/**
- * OpenCode's isDisproportionateMatch (edit.ts) — the matched span must not be
- * much larger than the query: that is a fuzzy pass over-reaching, a
- * wrong-edit near-miss. `oldText` of 1 line is exempt: our fuzzy passes that
- * can over-reach (block_anchor ≥3 lines, context_aware ≥2, trimmed_boundary)
- * never fire on single-line queries, so a 1-line query cannot match a huge span.
- */
+// --- OpenCode isDisproportionateMatch: matched span must not dwarf the query; 1-line queries exempt (over-reaching passes need ≥2 lines) ---
 function isDisproportionateMatch(search: string, oldText: string): boolean {
   const oldLines = oldText.split('\n').length;
   const searchLines = search.split('\n').length;
@@ -265,7 +237,7 @@ function countOccurrences(content: string, needle: string): number {
   return count;
 }
 
-/** Index of the line containing char `offset` in `lines` (joined by \n). */
+// --- Index of the line containing char offset in lines (joined by \n) ---
 function lineIndexAt(lines: string[], offset: number): number {
   let remaining = offset;
   for (let i = 0; i < lines.length; i++) {
@@ -276,7 +248,6 @@ function lineIndexAt(lines: string[], offset: number): number {
   return lines.length - 1;
 }
 
-/** Index of the candidate whose expanded block occurs exactly once, or null. */
 function findSingleUnique(blocks: string[], content: string): number | null {
   let uniqueIdx: number | null = null;
   for (let i = 0; i < blocks.length; i++) {

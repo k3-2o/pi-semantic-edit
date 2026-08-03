@@ -1,14 +1,9 @@
-// Closest-candidate-on-failure: when the chain finds nothing, return the
-// nearest near-miss so the model corrects against real file content.
-// Anchor on lines similar to the query's first line (floor-gated), then score
-// bounded windows from each anchor. The floor — not the passes' thresholds —
-// is the only gate: "nearest candidate, even below threshold."
+// --- On no-match, return the nearest near-miss; the floor (not pass thresholds) is the only gate ---
 
 import { similarity } from './similarity';
 import type { ClosestCandidate } from './types';
 import { normalizeNewlines } from './utils';
 
-/** Minimum line-level similarity for a line to be considered an anchor. */
 const ANCHOR_FLOOR = 0.3;
 
 export function findClosestCandidate(
@@ -26,7 +21,6 @@ export function findClosestCandidate(
 
   const origLines = orig.split('\n');
 
-  // Stage 1: anchor lines — lines similar enough to the query's first line.
   const anchors: { start: number; sim: number }[] = [];
   for (let i = 0; i < origLines.length && anchors.length < maxCandidates; i++) {
     const lineSim = similarity(origLines[i].trim(), firstLine);
@@ -35,7 +29,6 @@ export function findClosestCandidate(
 
   if (anchors.length === 0) return null;
 
-  // Stage 2: windows from each anchor (query length to 2x — mirrors passes).
   let best: { start: number; end: number; sim: number } | null = null;
   for (const { start } of anchors) {
     const minEnd = start + oldLines.length - 1;

@@ -1,5 +1,4 @@
-// Applies resolved edits against ORIGINAL content, bottom-up (higher spans
-// first, so indices stay valid). Overlaps and no-ops fail explicitly.
+// --- Applies resolved edits against ORIGINAL content, bottom-up (higher spans first) ---
 
 import type { ApplyResult, ResolvedEdit } from './types';
 import { normalizeNewlines } from './utils';
@@ -12,7 +11,7 @@ export function applyEdits(content: string, resolved: ResolvedEdit[]): ApplyResu
     return { content, applied, failed };
   }
 
-  // Detect overlaps on the ORIGINAL content before any replacement.
+  // --- Overlap detection needs ascending spans ---
   const sorted = [...resolved].sort((a, b) => a.start - b.start);
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
@@ -27,7 +26,6 @@ export function applyEdits(content: string, resolved: ResolvedEdit[]): ApplyResu
   }
   if (failed.length > 0) return { content, applied, failed };
 
-  // Apply bottom-up (highest start first) so indices stay valid.
   const pieces: { start: number; end: number; replacement: string; edit: ResolvedEdit }[] = [];
   for (const r of resolved) {
     const replacement = normalizeNewlines(r.edit.newText);
@@ -46,7 +44,6 @@ export function applyEdits(content: string, resolved: ResolvedEdit[]): ApplyResu
       });
       continue;
     }
-    // Guard: the actual text must still be present at this span.
     if (result.slice(p.start, p.end) !== p.edit.match.actual) {
       failed.push({
         edit: p.edit.edit,
