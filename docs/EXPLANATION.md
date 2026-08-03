@@ -57,6 +57,7 @@ The measure of success: the model never reaches for a python script, `awk`, or `
 | Incremental multi-edit | Strictly more failure-prone; the built-in promises non-incremental matching |
 | LSP diagnostics feedback | Violates the zero-dependency constraint; heavier than coherence warnings |
 | Content-snapshot stale guard | Needs permission-layer cooperation the extension architecture doesn't have; mtime + 50ms tolerance is the paper-confirmed reference design |
+| Pass 11 `unicode_trimmed` (compose pass 2 + pass 10) | PROPOSAL-11, 2026-08-03. The one analytic construction where the built-in's fused pass wins and all 10 passes fail (query dirtier than file in *both* trailing whitespace and typographic punctuation) is real — verified — but has **zero observed instances** across the torture suite, OpenDev's failure logs, and reviewed benchmarks. A pass entered on reasoning alone sets the precedent that the chain grows by hypothesis instead of by failure data; it is joint scoring in narrow dress (a match that names a blend, not a cause). The miss already costs one cheap round-trip via the closest-candidate fallback. **Re-entry trigger: implement only when a wild failure matching PROPOSAL-11 §2.3 is observed — and then with the fast-path fixed to test normalization identity, not ASCII** (the sketched fast-path fails inside its own gap class) |
 
 ## Sources
 
