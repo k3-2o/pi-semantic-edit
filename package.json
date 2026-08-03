@@ -1,6 +1,6 @@
 {
   "name": "pi-semantic-edit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Edits[] edit tool for Pi \u2014 10-pass fuzzy matcher chain (OpenDev + Unicode), replaceAll escape hatch, uniqueness guard, stale-read detection, zero runtime deps. Replaces the built-in edit.",
   "type": "module",
   "main": "index.ts",
