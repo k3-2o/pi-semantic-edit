@@ -70,7 +70,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       'on an edit to replace every occurrence (e.g. renaming a variable). Format:\n' +
       '{ "path": "src/foo.ts", "edits": [{ "oldText": "let x = 1;", "newText": "let x = 2;" }] }',
     promptSnippet:
-      'Make precise file edits with exact text replacement, including multiple disjoint edits in one call',
+      'Make precise file edits with exact text replacement, including multiple disjoint edits in one call — set replaceAll: true to replace every occurrence (e.g. renames)',
     promptGuidelines: [
       'Use edit for precise changes (edits[].oldText must match the current file content, modulo tolerated drift).',
       'When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls.',
