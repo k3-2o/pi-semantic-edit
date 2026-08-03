@@ -1,33 +1,32 @@
 # Reference
 
-The tool's contract: input format, matcher passes, and error behavior.
+The tool's contract: input format, matcher passes, safety behaviors, and error behavior.
 
 ## Input
 
-The tool is `edit`, one field:
+The tool is `edit`. One field set, mirroring Pi's built-in edit:
 
 | Field | Type | Description |
 |---|---|---|
-| `patch` | string | Aider-format SEARCH/REPLACE blocks (below) |
+| `path` | `string` | Path to the file to edit (relative or absolute; resolved against the session working directory) |
+| `edits` | `array` | One or more targeted replacements (below) |
 
-### Block format
+Each edit:
 
-Each block: the file path on its own line, then a block (fenced or bare) containing `<<<<<<< SEARCH`, the text to find, `=======`, the replacement, `>>>>>>> REPLACE`.
+| Field | Type | Description |
+|---|---|---|
+| `oldText` | `string` | Exact text to find. Must be unique in the file unless `replaceAll` is set, and must not overlap other `oldText`s in the same call |
+| `newText` | `string` | Replacement text |
+| `replaceAll` | `boolean` (optional) | Replace every occurrence of the matched text instead of failing on ambiguity. Default `false` |
 
-```
-src/foo.ts
-```
-```text
-<<<<<<< SEARCH
-old code
-=======
-new code
->>>>>>> REPLACE
-```
+Multiple edits in one call are matched against the **original** file, not incrementally.
 
-- Fences are optional; a language hint after the fence (e.g. `python` or `diff`) is ignored.
-- Multiple blocks per patch; each block's path comes from the line preceding its SEARCH marker. A block without a path header reuses the previous block's path.
-- Blocks are matched against the **original** file content, not incrementally.
+### Deprecated legacy inputs (accepted, not in the schema)
+
+- `patch` — aider SEARCH/REPLACE block string (pre-0.3.0 sessions)
+- `edits` as a JSON string; top-level `oldText`/`newText` — built-in legacy coercion parity
+
+These are normalized into the same `edits[]` shape before any matching.
 
 ## Matcher passes
 
@@ -50,8 +49,10 @@ Passes run in order, short-circuiting on the first match. Every pass returns onl
 
 | Behavior | What it does |
 |---|---|
-| Uniqueness check | If the matched text occurs more than once, the edit fails with 1-indexed line positions instead of guessing |
+| Uniqueness check | If the matched text occurs more than once (and `replaceAll` is unset), the edit fails with 1-indexed line positions instead of guessing |
 | Auto-expand | On ambiguity, grows context symmetrically around each occurrence until exactly one is uniquely identifiable |
+| replaceAll | Skips the ambiguity check and replaces every occurrence of the matched text; the summary reports the total replacement count |
+| Disproportionate-match refusal | If a fuzzy pass matches a span much larger than `oldText`, the edit is refused — never a silent wrong-location edit |
 | Actual-substring return | The replacement targets the real file text (not the query), preserving genuine formatting |
 | Stale-read detection | Rejects edits when the file's mtime is newer than the model's last read (50ms tolerance) |
 | Closest-candidate feedback | On no-match, reports the nearest real text with a similarity percentage |
@@ -61,21 +62,22 @@ Passes run in order, short-circuiting on the first match. Every pass returns onl
 
 | Condition | Result |
 |---|---|
-| Malformed patch (no blocks) | Validation error |
-| Block without a path header | Missing-path error |
-| File not found / not writable | File error |
+| No edits in the call | Validation error |
+| Edit without a path | Validation error |
+| File not found / not writable | File error with code |
 | File changed since last read | Stale-read error with re-read guidance |
-| SEARCH matches multiple locations | Ambiguous error with line positions |
+| Text matches multiple locations (no `replaceAll`) | Ambiguous error with line positions + replaceAll hint |
+| Fuzzy match much larger than the query | Disproportionate error, nothing written |
 | No match at all | Not-found error with closest candidate |
-| Overlapping edits in one patch | Overlap error, nothing written |
-| SEARCH and REPLACE identical | No-op error |
+| Overlapping edits in one call | Overlap error, nothing written |
+| Replacement identical to matched text | No-op error, nothing written |
 
-Failed edits never modify the file. A failed edit is a retry; the error message shows what was actually found so the retry can target it.
+Failed edits never modify the file. A failed edit is a retry: the error message shows what was actually found (positions, closest text, or span sizes) so the retry can target it.
 
 ## Install sources
 
 ```bash
 pi install npm:pi-semantic-edit        # npm registry
-pi install git:github.com/k3-2o/pi-semantic-edit@v0.2.1   # pinned git ref
+pi install git:github.com/k3-2o/pi-semantic-edit@v0.3.0   # pinned git ref
 pi install /path/to/checkout           # local directory
 ```
