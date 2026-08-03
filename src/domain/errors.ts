@@ -27,7 +27,13 @@ export function ambiguousError(path: string, count: number, positions: number[])
 export function notFoundError(path: string, closest?: ClosestCandidate): EditError {
   const base = `Text not found in ${path}. The 10-pass fuzzy matcher found no match.`;
   if (!closest) {
-    return { kind: 'not-found', message: base };
+    return {
+      kind: 'not-found',
+      message:
+        `${base}\n` +
+        'No similar text found either. Re-read the file to see its current content, then ' +
+        'retry with the exact text to replace.',
+    };
   }
   const pct = Math.round(closest.similarity * 100);
   const lines =
@@ -71,17 +77,30 @@ export function disproportionateError(path: string): EditError {
 }
 
 export function fileNotFoundError(path: string): EditError {
-  return { kind: 'file-not-found', message: `File not found: ${path}` };
+  return {
+    kind: 'file-not-found',
+    message:
+      `File not found: ${path}. ` +
+      'Check the path, or use write to create the file, then retry the edit.',
+  };
 }
 
 export function overlappingError(description: string): EditError {
-  return { kind: 'overlapping', message: `Overlapping edits: ${description}` };
+  return {
+    kind: 'overlapping',
+    message:
+      `Overlapping edits: ${description}. ` +
+      'Each edits[].oldText must target a disjoint region of the original file. ' +
+      'Merge overlapping or adjacent changes into one edit and retry.',
+  };
 }
 
 export function noOpError(): EditError {
   return {
     kind: 'no-op',
-    message: 'Edit results in no change: the replacement text is identical to the matched text.',
+    message:
+      'Edit results in no change: the replacement text is identical to the matched text. ' +
+      'Change newText to actually modify the content, or drop this edit.',
   };
 }
 

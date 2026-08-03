@@ -27,11 +27,13 @@ describe('error builders', () => {
     expect(err.linePositions).toEqual([3, 7, 12]);
   });
 
-  it('not-found without closest is a bare error', () => {
+  it('not-found without closest is a bare error with next-move', () => {
     const err = notFoundError('src/foo.ts');
     expect(err.kind).toBe('not-found');
     expect(err.closestCandidate).toBeUndefined();
     expect(err.message).toContain('not found in src/foo.ts');
+    expect(err.message).toContain('Re-read the file');
+    expect(err.message).toContain('retry with the exact text');
   });
 
   it('not-found with closest includes candidate preview and similarity', () => {
@@ -80,11 +82,14 @@ describe('error builders', () => {
     expect(err.message).toContain('(line 5)');
   });
 
-  it('other builders are well-formed', () => {
+  it('other builders are well-formed with next-move guidance', () => {
     expect(missingPathError().kind).toBe('missing-path');
     expect(fileNotFoundError('x.ts').message).toContain('File not found: x.ts');
+    expect(fileNotFoundError('x.ts').message).toContain('use write to create the file');
     expect(overlappingError('edit A overlaps edit B').message).toContain('Overlapping edits');
+    expect(overlappingError('edit A overlaps edit B').message).toContain('disjoint region');
     expect(noOpError().kind).toBe('no-op');
+    expect(noOpError().message).toContain('Change newText');
     expect(validationError('oldText is empty').kind).toBe('validation');
   });
 });

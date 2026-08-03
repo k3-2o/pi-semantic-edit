@@ -146,11 +146,26 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
               err && typeof err === 'object' && 'code' in err
                 ? `${(err as { code?: unknown }).code}`
                 : String(err);
-            throw toolError(fileNotFoundError(`${group.path}. ${code}`));
+            throw toolError(fileNotFoundError(`${group.path} (${code})`));
           }
 
           throwIfAborted();
-          const buffer = await readFile(absolutePath);
+          let buffer: Buffer;
+          try {
+            buffer = await readFile(absolutePath);
+          } catch (err) {
+            // File vanished or became unreadable after access — re-read is the fix.
+            const code =
+              err && typeof err === 'object' && 'code' in err
+                ? `${(err as { code?: unknown }).code}`
+                : String(err);
+            throw toolError(
+              validationError(
+                `Could not read ${group.path} (${code}) — the file may have changed or been removed. ` +
+                  'Re-read the file and retry the edit.',
+              ),
+            );
+          }
           const rawContent = buffer.toString('utf-8');
           const { bom, text } = stripBom(rawContent);
           const ending = detectLineEnding(text);
