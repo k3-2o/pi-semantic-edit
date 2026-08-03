@@ -9,7 +9,7 @@ import { resolve } from 'path';
 import { Box, Container, getCapabilities, hyperlink, Spacer, Text } from '@earendil-works/pi-tui';
 import { renderDiff, generateDiffString } from '@earendil-works/pi-coding-agent';
 import { applyBlocks } from '../domain/editor';
-import { stripBom } from '../domain/utils';
+import { resolveToCwd, stripBom } from '../domain/utils';
 import { normalizeEditArgs } from './normalize';
 
 export interface EditPreview {
@@ -242,7 +242,9 @@ async function computePreviewDiff(input: unknown, cwd: string): Promise<EditPrev
     }
     const first = reqs[0];
     if (!first.path) return { error: 'Each edit must specify a path.' };
-    const absolutePath = resolve(cwd, first.path);
+    // Resolve the same way the tool does (session cwd, ~ expansion) so the
+    // preview and apply agree on the path.
+    const absolutePath = resolveToCwd(first.path, cwd);
     await fsAccess(absolutePath, constants.R_OK);
     const rawContent = await readFile(absolutePath, 'utf-8');
     const { text: content } = stripBom(rawContent);
