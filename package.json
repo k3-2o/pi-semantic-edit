@@ -42,8 +42,8 @@
   },
   "keywords": [
     "pi-package",
-    "aider-format",
-    "search-replace-blocks",
+    "search-replace",
+    "replace-all",
     "fuzzy-matching",
     "model-agnostic",
     "code-editing",

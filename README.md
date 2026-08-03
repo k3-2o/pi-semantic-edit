@@ -66,8 +66,8 @@ If `oldText` matches more than one location, the edit fails with the line positi
 
 ## Documentation
 
-- [Reference](docs/REFERENCE.md) — input format, matcher passes, safety behaviors, error behavior
-- [Explanation](docs/EXPLANATION.md) — why the format and the matcher are designed this way
+- [Reference](https://github.com/k3-2o/pi-semantic-edit/blob/main/docs/REFERENCE.md) — input format, matcher passes, safety behaviors, error behavior
+- [Explanation](https://github.com/k3-2o/pi-semantic-edit/blob/main/docs/EXPLANATION.md) — why the format and the matcher are designed this way
 
 ## License
 
