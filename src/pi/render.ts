@@ -8,9 +8,9 @@ import { homedir } from 'os';
 import { resolve } from 'path';
 import { Box, Container, getCapabilities, hyperlink, Spacer, Text } from '@earendil-works/pi-tui';
 import { renderDiff, generateDiffString } from '@earendil-works/pi-coding-agent';
-import { parseAiderBlocks } from '../domain/parser';
 import { applyBlocks } from '../domain/editor';
 import { stripBom } from '../domain/utils';
+import { normalizeEditArgs } from './normalize';
 
 export interface EditPreview {
   diff?: string;
@@ -40,15 +40,15 @@ function linkPath(styledText: string, rawPath: string | null, cwd: string): stri
   );
 }
 
-/** First file path referenced by the patch (for the call header). */
-export function firstPatchPath(patch: string | undefined): string | null {
-  if (!patch) return null;
-  try {
-    const blocks = parseAiderBlocks(patch);
-    return blocks[0]?.path || null;
-  } catch {
-    return null;
+/** First file path referenced by the args (for the call header). */
+export function firstPatchPath(input: unknown): string | null {
+  if (typeof input !== 'object' || input === null) return null;
+  const args = input as Record<string, unknown>;
+  if (typeof args.patch === 'string') {
+    const reqs = normalizeEditArgs(args);
+    return reqs?.[0]?.path || null;
   }
+  return typeof args.path === 'string' ? args.path : null;
 }
 
 function renderToolPath(rawPath: string | null, theme: any, cwd: string): string {
@@ -61,7 +61,7 @@ function renderToolPath(rawPath: string | null, theme: any, cwd: string): string
 }
 
 function formatEditCall(args: any, theme: any, cwd: string): string {
-  const pathDisplay = renderToolPath(firstPatchPath(str(args?.patch) ?? undefined), theme, cwd);
+  const pathDisplay = renderToolPath(firstPatchPath(args), theme, cwd);
   return `${theme.fg('toolTitle', theme.bold('edit'))} ${pathDisplay}`;
 }
 
@@ -85,10 +85,11 @@ function getEditCallRenderComponent(state: any, lastComponent: any): EditCallCom
   return component;
 }
 
-function getRenderablePreviewInput(args: any): { patch: string } | null {
-  if (!args) return null;
-  if (typeof args.patch === 'string') return { patch: args.patch };
-  return null;
+function getRenderablePreviewInput(args: any): unknown {
+  if (!args || typeof args !== 'object') return null;
+  const reqs = normalizeEditArgs(args);
+  if (!reqs || reqs.length === 0) return null;
+  return args;
 }
 
 function setEditPreview(
@@ -156,7 +157,7 @@ function formatEditResult(
   const resultDiff = result.details?.diff;
   if (resultDiff && resultDiff !== preview?.diff)
     return renderDiff(resultDiff, {
-      filePath: firstPatchPath(str(args?.patch) ?? undefined) ?? undefined,
+      filePath: firstPatchPath(args) ?? undefined,
     });
   return undefined;
 }
@@ -178,7 +179,7 @@ export function createEditRenderers() {
       if (context.argsComplete && previewInput && !component.preview && !component.previewPending) {
         component.previewPending = true;
         const requestKey = argsKey;
-        void computePreviewDiff(previewInput.patch, context.cwd).then((preview) => {
+        void computePreviewDiff(previewInput, context.cwd).then((preview) => {
           if (component.previewArgsKey === requestKey) {
             setEditPreview(component, preview, requestKey);
             context.invalidate();
@@ -233,18 +234,19 @@ export function createEditRenderers() {
 
 // ---- Preview computation (async, mirrors built-in) ---- //
 
-async function computePreviewDiff(patch: string, cwd: string): Promise<EditPreview> {
+async function computePreviewDiff(input: unknown, cwd: string): Promise<EditPreview> {
   try {
-    const blocks = parseAiderBlocks(patch);
-    if (blocks.length === 0) return { error: 'No valid SEARCH/REPLACE blocks found in patch.' };
-    const first = blocks[0];
-    if (!first.path)
-      return { error: 'Each SEARCH/REPLACE block must be preceded by a file path line.' };
+    const reqs = normalizeEditArgs(input);
+    if (!reqs || reqs.length === 0) {
+      return { error: 'No edits found. Provide path and edits[] with oldText/newText pairs.' };
+    }
+    const first = reqs[0];
+    if (!first.path) return { error: 'Each edit must specify a path.' };
     const absolutePath = resolve(cwd, first.path);
     await fsAccess(absolutePath, constants.R_OK);
     const rawContent = await readFile(absolutePath, 'utf-8');
     const { text: content } = stripBom(rawContent);
-    const result = applyBlocks(content, blocks, first.path);
+    const result = applyBlocks(content, reqs, first.path);
     if (!result.ok || result.content === undefined) {
       return { error: result.error?.message ?? 'Edit could not be applied.' };
     }

@@ -17,14 +17,15 @@ export function ambiguousError(path: string, count: number, positions: number[])
   return {
     kind: 'ambiguous',
     message:
-      `SEARCH text found ${count} times at ${formatLinePositions(positions)} in ${path}. ` +
-      'Provide more surrounding context to make the match unique.',
+      `Text found ${count} times at ${formatLinePositions(positions)} in ${path}. ` +
+      'Provide more surrounding context to make the match unique, or set replaceAll: true ' +
+      'to replace every occurrence.',
     linePositions: positions,
   };
 }
 
 export function notFoundError(path: string, closest?: ClosestCandidate): EditError {
-  const base = `SEARCH text not found in ${path}. The 9-pass fuzzy matcher found no match.`;
+  const base = `Text not found in ${path}. The 10-pass fuzzy matcher found no match.`;
   if (!closest) {
     return { kind: 'not-found', message: base };
   }
@@ -46,13 +47,26 @@ export function notFoundError(path: string, closest?: ClosestCandidate): EditErr
 
 export function malformedPatchError(message: string, lineIndex?: number): EditError {
   const at = lineIndex !== undefined ? ` (line ${lineIndex + 1})` : '';
-  return { kind: 'malformed-patch', message: `Malformed SEARCH/REPLACE patch${at}: ${message}` };
+  return {
+    kind: 'malformed-patch',
+    message: `Malformed SEARCH/REPLACE patch${at}: ${message}`, // deprecated aider input only
+  };
 }
 
 export function missingPathError(): EditError {
   return {
     kind: 'missing-path',
-    message: 'Each SEARCH/REPLACE block must be preceded by a file path line (aider format).',
+    message:
+      'Each edit must specify a path (aider blocks need a file path line before the SEARCH marker).',
+  };
+}
+
+export function disproportionateError(path: string): EditError {
+  return {
+    kind: 'disproportionate',
+    message:
+      `Refusing to edit ${path}: the matched span is much larger than the text to find. ` +
+      'Re-read the file and provide the full exact text for the intended replacement.',
   };
 }
 

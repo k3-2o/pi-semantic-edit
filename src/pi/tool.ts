@@ -12,16 +12,10 @@ import {
   withFileMutationQueue,
   type ExtensionAPI,
 } from '@earendil-works/pi-coding-agent';
-import type { EditError, ParsedBlock } from '../domain/types';
+import type { EditError } from '../domain/types';
 import { applyBlocks } from '../domain/editor';
 import { coherenceCheck } from '../domain/coherence';
-import { MalformedPatchError, parseAiderBlocks } from '../domain/parser';
-import {
-  fileNotFoundError,
-  malformedPatchError,
-  missingPathError,
-  validationError,
-} from '../domain/errors';
+import { fileNotFoundError, validationError } from '../domain/errors';
 import type { ReadRegistry } from '../domain/stale-read';
 import {
   detectLineEnding,
@@ -30,19 +24,9 @@ import {
   restoreLineEndings,
   stripBom,
 } from '../domain/utils';
-import { editToolSchema } from './schema';
+import { editToolSchema, type EditToolInput } from './schema';
+import { normalizeEditArgs, type EditRequestLike } from './normalize';
 import { createEditRenderers } from './render';
-
-const AIDER_FORMAT_EXAMPLE = [
-  'src/foo.ts',
-  '```',
-  '<<<<<<< SEARCH',
-  'old code (exactly as it appears in the file)',
-  '=======',
-  'new code',
-  '>>>>>>> REPLACE',
-  '```',
-].join('\n');
 
 /** Throw an Error carrying a structured EditError (for renderers/debugging). */
 function toolError(error: EditError): Error {
@@ -51,11 +35,11 @@ function toolError(error: EditError): Error {
 
 interface FileGroup {
   path: string;
-  blocks: ParsedBlock[];
+  blocks: EditRequestLike[];
 }
 
-/** Group blocks by path, preserving first-seen order. */
-function groupByPath(blocks: ParsedBlock[]): FileGroup[] {
+/** Group requests by path, preserving first-seen order. */
+function groupByPath(blocks: EditRequestLike[]): FileGroup[] {
   const groups: FileGroup[] = [];
   const index = new Map<string, number>();
   for (const block of blocks) {
@@ -70,32 +54,6 @@ function groupByPath(blocks: ParsedBlock[]): FileGroup[] {
   return groups;
 }
 
-/** Convert a legacy (built-in / old experiment) args shape into an aider patch. */
-function legacyArgsToPatch(input: any): { patch: string } | null {
-  const edits: { oldText: string; newText: string }[] = [];
-  // Some models (e.g. Opus 4.6, GLM-5.1) send edits as a JSON string
-  // (built-in edit handles this too — keep parity for session resume).
-  if (typeof input.edits === 'string') {
-    try {
-      const parsed = JSON.parse(input.edits);
-      if (Array.isArray(parsed)) edits.push(...parsed);
-    } catch {
-      /* malformed JSON — fall through */
-    }
-  } else if (Array.isArray(input.edits)) {
-    edits.push(...input.edits);
-  }
-  if (typeof input.oldText === 'string' && typeof input.newText === 'string') {
-    edits.push({ oldText: input.oldText, newText: input.newText });
-  }
-  if (edits.length === 0) return null;
-  const path = typeof input.path === 'string' && input.path ? input.path : 'src';
-  const patch = edits
-    .map((e) => `${path}\n<<<<<<< SEARCH\n${e.oldText}\n=======\n${e.newText}\n>>>>>>> REPLACE`)
-    .join('\n');
-  return { patch };
-}
-
 /** Creates the `edit` tool — shadows Pi's built-in (SPEC D1). */
 export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: ReadRegistry) {
   const renderers = createEditRenderers();
@@ -104,37 +62,44 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
     name: 'edit',
     label: 'edit',
     description:
-      'Edit a file by providing a SEARCH/REPLACE patch in aider block format. ' +
+      'Edit a file by providing exact text replacements (edits[]), each with oldText and newText. ' +
       'The matcher tolerates whitespace, indentation, escape, and formatting drift ' +
-      'between the SEARCH text and the actual file content (9-pass fuzzy chain). ' +
-      'If the SEARCH text matches multiple locations, the edit fails with the line ' +
-      'positions and asks for more context — it never guesses. Format:\n' +
-      AIDER_FORMAT_EXAMPLE,
+      'between the oldText and the actual file content (10-pass fuzzy chain). ' +
+      'If the text matches multiple locations, the edit fails with the line ' +
+      'positions and asks for more context — it never guesses. Set replaceAll: true ' +
+      'on an edit to replace every occurrence (e.g. renaming a variable). Format:\n' +
+      '{ "path": "src/foo.ts", "edits": [{ "oldText": "let x = 1;", "newText": "let x = 2;" }] }',
     promptSnippet:
-      'Edit files using aider-format SEARCH/REPLACE blocks, including multiple blocks in one call',
+      'Make precise file edits with exact text replacement, including multiple disjoint edits in one call',
     promptGuidelines: [
-      'Use edit for file changes. Provide the file path on its own line, then a block: <<<<<<< SEARCH, the exact current code, =======, the replacement code, >>>>>>> REPLACE.',
-      'When changing multiple separate locations in a file, use multiple blocks in one edit call instead of multiple edit calls.',
-      'Each SEARCH block is matched against the original file, not after earlier blocks are applied. Do not emit overlapping or nested blocks; merge nearby changes into one block.',
-      'Keep the SEARCH text as small as possible while still being unique in the file. Do not pad with large unchanged regions.',
+      'Use edit for precise changes (edits[].oldText must match the current file content, modulo tolerated drift).',
+      'When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls.',
+      'Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.',
+      'Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.',
       'The matcher tolerates minor whitespace, indentation, line-ending, escape, and Unicode drift — but copy the code as accurately as you can.',
-      'If the SEARCH text matches multiple locations, the edit fails with the line positions — include more surrounding context. If nothing matches, the error shows the closest text actually in the file; correct against that and retry.',
+      'If the text matches multiple locations, the edit fails with the line positions — include more surrounding context, or set replaceAll: true to replace every occurrence. If nothing matches, the error shows the closest text actually in the file; correct against that and retry.',
     ],
     parameters: editToolSchema,
     renderShell: 'self' as const,
 
     prepareArguments(input: any) {
       if (!input || typeof input !== 'object') return input;
-      if (typeof input.patch === 'string') return input;
-      // Legacy session resume: old experiment emitted path/edits[]/oldText+newText.
-      const converted = legacyArgsToPatch(input);
-      if (converted) return converted;
+      if (typeof input.patch === 'string') {
+        // Deprecated aider input — normalize here too so execute stays uniform.
+        const reqs = normalizeEditArgs(input);
+        return reqs ? { path: reqs[0]?.path ?? '', edits: reqs } : input;
+      }
+      const reqs = normalizeEditArgs(input);
+      if (reqs) {
+        const first = reqs[0];
+        return { path: first?.path ?? '', edits: reqs };
+      }
       return input;
     },
 
     async execute(
       _toolCallId: string,
-      input: { patch: string },
+      input: EditToolInput,
       signal: AbortSignal | undefined,
       _onUpdate: unknown,
       ctx: { cwd?: string } | undefined,
@@ -148,18 +113,14 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       const baseCwd = ctx?.cwd ?? cwd;
 
       // ---- Parse + validate ----
-      let blocks: ParsedBlock[];
-      try {
-        blocks = parseAiderBlocks(input.patch);
-      } catch (err) {
-        const e = err as MalformedPatchError;
-        throw toolError(malformedPatchError(e.message, e.index));
+      const blocks = normalizeEditArgs(input);
+      if (!blocks || blocks.length === 0) {
+        throw toolError(
+          validationError('No edits found. Provide path and edits[] with oldText/newText pairs.'),
+        );
       }
-      if (blocks.length === 0) {
-        throw toolError(validationError('No valid SEARCH/REPLACE blocks found in patch.'));
-      }
-      for (const b of blocks) {
-        if (!b.path) throw toolError(missingPathError());
+      if (blocks.some((b) => !b.path)) {
+        throw toolError(validationError('Each edit must specify a path.'));
       }
 
       // ---- Execute per file group (fail-fast, per-file mutation queue) ----
@@ -215,6 +176,7 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
           const diffResult = generateDiffString(content, result.content);
           return {
             appliedCount: group.blocks.length,
+            replacements: result.replacements,
             matchPasses: result.matchPasses,
             diff: diffResult.diff ?? '',
             firstChangedLine: diffResult.firstChangedLine ?? 0,
@@ -223,8 +185,10 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
           };
         });
 
+        const replacementWord = fileResult.replacements === 1 ? 'replacement' : 'replacements';
         summaries.push(
-          `Successfully replaced ${fileResult.appliedCount} block(s) in ${group.path}.`,
+          `Successfully replaced ${fileResult.replacements} ${replacementWord} across ` +
+            `${fileResult.appliedCount} edit(s) in ${group.path}.`,
         );
         if (fileResult.warnings.length > 0) {
           summaries.push('Coherence warnings:');

@@ -53,6 +53,60 @@ describe('resolveBlocks', () => {
     expect(outcome.error!.kind).toBe('validation');
   });
 
+  it('rejects a disproportionate match (fuzzy pass over-reach)', () => {
+    // A 4-line query whose first/last anchor lines match a 8-line span
+    // (block_anchor window = oldLines*2 = 8). The matched span (8 lines) is
+    // >= oldLines*2 = 8 → disproportionate → refused, never applied.
+    const oldText = ['startAnchor();', 'mid 1', 'mid 2', 'endAnchor();'].join('\n');
+    const content = [
+      'startAnchor();',
+      'gap',
+      'gap',
+      'gap',
+      'gap',
+      'gap',
+      'gap',
+      'endAnchor();',
+    ].join('\n');
+    const outcome = resolveBlocks(content, [{ path: 'f.ts', oldText, newText: 'x' }], 'f.ts');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error!.kind).toBe('disproportionate');
+  });
+
+  it("does NOT flag a single-line query as disproportionate (passes can't over-reach)", () => {
+    const outcome = resolveBlocks(
+      Array.from({ length: 40 }, () => 'same();').join('\n'),
+      [{ path: 'f.ts', oldText: 'same();', newText: 'other();' }],
+      'f.ts',
+    );
+    expect(outcome.ok).toBe(false); // ambiguous, NOT disproportionate
+    expect(outcome.error!.kind).toBe('ambiguous');
+  });
+
+  it('replaceAll resolves EVERY occurrence of the matched text', () => {
+    const content = 'a;\nkeep;\na;\na;';
+    const outcome = resolveBlocks(
+      content,
+      [{ path: 'f.ts', oldText: 'a;', newText: 'b;', replaceAll: true }],
+      'f.ts',
+    );
+    expect(outcome.ok).toBe(true);
+    expect(outcome.resolved).toHaveLength(3);
+    // spans point at the ORIGINAL content
+    expect(outcome.resolved!.map((r) => content.slice(r.start, r.end))).toEqual(['a;', 'a;', 'a;']);
+  });
+
+  it('replaceAll on a unique match still resolves once and reports pass', () => {
+    const outcome = resolveBlocks(
+      'x = 1;',
+      [{ path: 'f.ts', oldText: 'x = 1;', newText: 'x = 2;', replaceAll: true }],
+      'f.ts',
+    );
+    expect(outcome.ok).toBe(true);
+    expect(outcome.resolved).toHaveLength(1);
+    expect(outcome.resolved![0].match.passName).toBe('simple');
+  });
+
   it('rejects identical SEARCH and REPLACE', () => {
     const blocks = patch('x', 'f.ts', 'same', 'same');
     const outcome = resolveBlocks('same here', blocks, 'f.ts');
@@ -111,5 +165,18 @@ describe('applyBlocks', () => {
     expect(result.ok).toBe(false);
     expect(result.error!.kind).toBe('no-op');
     void blocks;
+  });
+
+  it('applyBlocks replaceAll replaces all occurrences and counts replacements', () => {
+    const result = applyBlocks(
+      'const a = 1;\nconst b = a + a;\n',
+      [{ path: 'f.ts', oldText: 'a', newText: 'item', replaceAll: true }],
+      'f.ts',
+    );
+    expect(result.ok).toBe(true);
+    expect(result.content).toBe('const item = 1;\nconst b = item + item;\n');
+    expect(result.replacements).toBe(3);
+    // per-span pass names: 3 spans from one replaceAll edit
+    expect(result.matchPasses).toEqual(['replace_all', 'replace_all', 'replace_all']);
   });
 });

@@ -74,4 +74,16 @@ describe('auto-expand disambiguation', () => {
     expect(outcome.ok).toBe(true);
     expect(outcome.resolved![0].match.passName).toBe('simple');
   });
+
+  it('replaceAll bypasses auto-expand entirely (no ambiguity)', () => {
+    const content = Array.from({ length: 20 }, () => '  boilerplate();').join('\n');
+    const outcome = resolveBlocks(
+      content,
+      [{ path: 'f.ts', oldText: '  boilerplate();', newText: '  changed();', replaceAll: true }],
+      'f.ts',
+    );
+    expect(outcome.ok).toBe(true);
+    expect(outcome.resolved).toHaveLength(20);
+    expect(outcome.resolved![0].match.passName).toBe('replace_all');
+  });
 });

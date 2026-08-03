@@ -7,7 +7,17 @@ export interface Edit {
   newText: string;
 }
 
-/** A block parsed from an aider-format patch string. */
+/**
+ * An edit as the model sends it (the tool's primary contract, SPEC D1):
+ * Pi built-in `edits[]` shape + optional per-edit replaceAll escape hatch.
+ * `replaceAll` replaces every occurrence of the matched text, skipping the
+ * ambiguity error (OpenDev/OpenCode precedent).
+ */
+export interface EditRequest extends Edit {
+  replaceAll?: boolean;
+}
+
+/** A block parsed from an aider-format patch string (deprecated legacy input). */
 export interface ParsedBlock {
   path: string;
   oldText: string;
@@ -70,6 +80,7 @@ export type EditErrorKind =
   | 'not-found'
   | 'overlapping'
   | 'no-op'
+  | 'disproportionate'
   | 'validation';
 
 export interface EditError {

@@ -5,13 +5,14 @@ import { findClosestCandidate } from './closest';
 import { findMatch } from './chain';
 import {
   ambiguousError,
+  disproportionateError,
   noOpError,
   notFoundError,
   overlappingError,
   validationError,
 } from './errors';
 import { reportOccurrences } from './uniqueness';
-import type { EditError, FailedEdit, MatchResult, ParsedBlock, ResolvedEdit } from './types';
+import type { EditError, EditRequest, FailedEdit, MatchResult, ResolvedEdit } from './types';
 
 /** Auto-expand cap: total lines added around a match (half above, half below). */
 const MAX_EXPAND_LINES = 10;
@@ -23,13 +24,14 @@ export interface ResolveBlocksResult {
 }
 
 /**
- * Match every block against one content string (non-incremental — all blocks
- * resolve against the ORIGINAL content). Returns the first error on failure:
- * empty search text, no match (with closest candidate), ambiguous match.
+ * Match every request against one content string (non-incremental — all
+ * requests resolve against the ORIGINAL content). Returns the first error on
+ * failure: empty search text, no match (with closest candidate), ambiguous
+ * match (unless replaceAll), disproportionate match (OpenCode port).
  */
 export function resolveBlocks(
   content: string,
-  blocks: ParsedBlock[],
+  blocks: EditRequest[],
   path: string,
 ): ResolveBlocksResult {
   const resolved: ResolvedEdit[] = [];
@@ -37,13 +39,13 @@ export function resolveBlocks(
     if (block.oldText.length === 0) {
       return {
         ok: false,
-        error: validationError('SEARCH text is empty; provide the exact code to find.'),
+        error: validationError('oldText is empty; provide the exact text to find.'),
       };
     }
     if (block.oldText === block.newText) {
       return {
         ok: false,
-        error: validationError('SEARCH and REPLACE text are identical; this edit does nothing.'),
+        error: validationError('oldText and newText are identical; this edit does nothing.'),
       };
     }
 
@@ -51,6 +53,35 @@ export function resolveBlocks(
     if (!match) {
       const closest = findClosestCandidate(content, block.oldText);
       return { ok: false, error: notFoundError(path, closest ?? undefined) };
+    }
+
+    // Disproportionate-match refusal (OpenCode isDisproportionateMatch port):
+    // a fuzzy pass must never match a span far larger than the model's query —
+    // that is a wrong-edit near-miss. Guarded before uniqueness.
+    if (isDisproportionateMatch(match.actual, block.oldText)) {
+      return { ok: false, error: disproportionateError(path) };
+    }
+
+    // replaceAll: replace EVERY occurrence of the matched actual text — the
+    // escape hatch for rename-everywhere. Multiple spans never overlap
+    // (indexOf advances), so apply's bottom-up handling covers them unchanged.
+    if (block.replaceAll) {
+      const spans = findAllSpans(content, match.actual);
+      if (spans.length === 0) {
+        return {
+          ok: false,
+          error: validationError('internal invariant violated: matched text not found in content'),
+        };
+      }
+      for (const span of spans) {
+        resolved.push({
+          edit: { path, oldText: block.oldText, newText: block.newText },
+          match: { ...match, passName: spans.length > 1 ? 'replace_all' : match.passName },
+          start: span.start,
+          end: span.end,
+        });
+      }
+      continue;
     }
 
     const report = reportOccurrences(content, match.actual);
@@ -87,28 +118,31 @@ export interface ApplyBlocksResult {
   error?: EditError;
   /** pass names per applied edit (OpenDev match_pass parity). */
   matchPasses: string[];
+  /** total spans replaced (replaceAll can consume many for one edit). */
+  replacements: number;
 }
 
 /** Resolve + apply all blocks against one content string. */
 export function applyBlocks(
   content: string,
-  blocks: ParsedBlock[],
+  blocks: EditRequest[],
   path: string,
 ): ApplyBlocksResult {
   const outcome = resolveBlocks(content, blocks, path);
   if (!outcome.ok || !outcome.resolved) {
-    return { ok: false, error: outcome.error, matchPasses: [] };
+    return { ok: false, error: outcome.error, matchPasses: [], replacements: 0 };
   }
 
   const result = applyEdits(content, outcome.resolved);
   if (result.failed.length > 0) {
-    return { ok: false, error: failureToError(result.failed[0]), matchPasses: [] };
+    return { ok: false, error: failureToError(result.failed[0]), matchPasses: [], replacements: 0 };
   }
 
   return {
     ok: true,
     content: result.content,
     matchPasses: result.applied.map((a) => a.match.passName),
+    replacements: result.applied.length,
   };
 }
 
@@ -134,7 +168,7 @@ function failureToError(f: FailedEdit): EditError {
 
 function tryAutoExpand(
   content: string,
-  block: ParsedBlock,
+  block: EditRequest,
   path: string,
   actual: string,
 ): ResolvedEdit | null {
@@ -195,6 +229,21 @@ function findAllSpans(content: string, needle: string): { start: number; end: nu
     from = idx + 1;
   }
   return spans;
+}
+
+/**
+ * OpenCode's isDisproportionateMatch (edit.ts) — the matched span must not be
+ * much larger than the query: that is a fuzzy pass over-reaching, a
+ * wrong-edit near-miss. `oldText` of 1 line is exempt: our fuzzy passes that
+ * can over-reach (block_anchor ≥3 lines, context_aware ≥2, trimmed_boundary)
+ * never fire on single-line queries, so a 1-line query cannot match a huge span.
+ */
+function isDisproportionateMatch(search: string, oldText: string): boolean {
+  const oldLines = oldText.split('\n').length;
+  const searchLines = search.split('\n').length;
+  if (searchLines >= Math.max(oldLines + 3, oldLines * 2)) return true;
+  if (oldLines === 1) return false;
+  return search.trim().length > Math.max(oldText.trim().length + 500, oldText.trim().length * 4);
 }
 
 function countOccurrences(content: string, needle: string): number {
