@@ -41,7 +41,7 @@ function linkPath(styledText: string, rawPath: string | null, cwd: string): stri
 }
 
 /** First file path referenced by the args (for the call header). */
-export function firstPatchPath(input: unknown): string | null {
+function firstPatchPath(input: unknown): string | null {
   if (typeof input !== 'object' || input === null) return null;
   const args = input as Record<string, unknown>;
   if (typeof args.patch === 'string') {

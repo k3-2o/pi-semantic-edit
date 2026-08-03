@@ -1,7 +1,7 @@
 // Shared domain types — pure, no Pi imports.
 
 /** One parsed or constructed edit: find oldText in path, replace with newText. */
-export interface Edit {
+interface Edit {
   path: string;
   oldText: string;
   newText: string;
@@ -49,7 +49,7 @@ export interface ApplyResult {
   failed: FailedEdit[];
 }
 
-export interface AppliedEdit {
+interface AppliedEdit {
   edit: Edit;
   match: MatchResult;
 }
@@ -62,7 +62,7 @@ export interface ResolvedEdit {
   end: number;
 }
 
-export type EditFailureKind = 'overlap' | 'no-op' | 'invariant';
+type EditFailureKind = 'overlap' | 'no-op' | 'invariant';
 
 export interface FailedEdit {
   edit: Edit;
@@ -71,7 +71,7 @@ export interface FailedEdit {
 }
 
 /** Error kinds surfaced to the tool layer. */
-export type EditErrorKind =
+type EditErrorKind =
   | 'malformed-patch'
   | 'missing-path'
   | 'file-not-found'

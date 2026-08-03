@@ -7,7 +7,7 @@
 
 import { similarity } from './similarity';
 
-export type PassFind = (original: string, oldContent: string) => string | null;
+type PassFind = (original: string, oldContent: string) => string | null;
 
 // ---------------------------------------------------------------------------
 // Pass 1: Simple — exact string match

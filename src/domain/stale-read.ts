@@ -6,14 +6,14 @@
 
 import type { EditError } from './types';
 
-export interface StatLike {
+interface StatLike {
   mtimeMs: number;
 }
 
 export type StatFn = (path: string) => StatLike;
 export type NowFn = () => number;
 
-export const DEFAULT_TOLERANCE_MS = 50; // from the paper
+const DEFAULT_TOLERANCE_MS = 50; // from the paper
 
 export class ReadRegistry {
   private reads = new Map<string, number>();
