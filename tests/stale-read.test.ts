@@ -100,4 +100,11 @@ describe('ReadRegistry', () => {
     expect(err!.kind).toBe('stale-read');
     expect(err!.message).toContain('changed since you last read it');
   });
+
+  it('selfRefresh records file mtime (future-mtime file stays fresh after our edit)', () => {
+    const futureMtime = 10_000;
+    const reg = new ReadRegistry({ now: () => 1000, stat: fakeStat(futureMtime) });
+    reg.selfRefresh('/f.ts');
+    expect(reg.isFresh('/f.ts')).toBe(true);
+  });
 });

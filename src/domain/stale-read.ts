@@ -71,7 +71,16 @@ export class ReadRegistry {
 
   /** Mark the file as freshly known (called after our own successful edit). */
   selfRefresh(path: string): void {
-    this.record(path);
+    // Record the file's mtime (our write's actual timestamp) — if the file's
+    // clock is ahead (skew/NFS), now() would be older than the mtime and the
+    // next edit would false-positive stale. Fall back to now() if stat throws.
+    let mtime: number;
+    try {
+      mtime = this.stat(path).mtimeMs;
+    } catch {
+      mtime = this.now();
+    }
+    this.reads.set(path, Math.max(mtime, this.now()));
   }
 
   /** Forget all records (extension reload / session reset). */
