@@ -25,3 +25,4 @@ node_modules/
 
 # Deep docs — not needed at runtime
 /docs/
+AUDIT-FINDINGS.md
