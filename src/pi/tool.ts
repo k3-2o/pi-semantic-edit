@@ -14,8 +14,13 @@ import {
 import type { EditError } from '../domain/types';
 import { applyBlocks } from '../domain/editor';
 import { coherenceCheck } from '../domain/coherence';
-import { fileNotFoundError, validationError } from '../domain/errors';
-import type { ReadRegistry } from '../domain/stale-read';
+import {
+  fileNotFoundError,
+  malformedPatchError,
+  missingPathError,
+  validationError,
+} from '../domain/errors';
+import { MalformedPatchError } from '../domain/parser';
 import {
   detectLineEnding,
   normalizeNewlines,
@@ -54,7 +59,7 @@ function groupByPath(blocks: EditRequestLike[]): FileGroup[] {
 }
 
 // --- Creates the `edit` tool — shadows Pi's built-in (SPEC D1) ---
-export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: ReadRegistry) {
+export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
   const renderers = createEditRenderers();
 
   return {
@@ -83,12 +88,17 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
 
     prepareArguments(input: any) {
       if (!input || typeof input !== 'object') return input;
+      let reqs: EditRequestLike[] | null;
+      try {
+        reqs = normalizeEditArgs(input);
+      } catch (err) {
+        // --- Deprecated aider input parsing can throw; leave input for the error path to describe ---
+        if (err instanceof MalformedPatchError) return input;
+        throw err;
+      }
       if (typeof input.patch === 'string') {
-        // --- Deprecated aider input — normalize here too so execute stays uniform ---
-        const reqs = normalizeEditArgs(input);
         return reqs ? { path: reqs[0]?.path ?? '', edits: reqs } : input;
       }
-      const reqs = normalizeEditArgs(input);
       if (reqs) {
         const first = reqs[0];
         return { path: first?.path ?? '', edits: reqs };
@@ -110,14 +120,23 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       // --- Resolve against the SESSION cwd, not the extension-load cwd — they differ when pi is launched elsewhere ---
       const baseCwd = ctx?.cwd ?? cwd;
 
-      const blocks = normalizeEditArgs(input);
+      let blocks: EditRequestLike[] | null;
+      try {
+        blocks = normalizeEditArgs(input);
+      } catch (err) {
+        // --- Deprecated aider parsing: surface a typed EditError, not a raw exception ---
+        if (err instanceof MalformedPatchError) {
+          throw toolError(malformedPatchError(err.message, err.index));
+        }
+        throw err;
+      }
       if (!blocks || blocks.length === 0) {
         throw toolError(
           validationError('No edits found. Provide path and edits[] with oldText/newText pairs.'),
         );
       }
       if (blocks.some((b) => !b.path)) {
-        throw toolError(validationError('Each edit must specify a path.'));
+        throw toolError(missingPathError());
       }
 
       const summaries: string[] = [];
@@ -129,9 +148,6 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
       for (const group of groupByPath(blocks)) {
         const absolutePath = resolveToCwd(group.path, baseCwd);
         throwIfAborted();
-
-        const stale = registry.assertFresh(absolutePath);
-        if (stale) throw toolError(stale);
 
         const fileResult = await withFileMutationQueue(absolutePath, async () => {
           throwIfAborted();
@@ -179,9 +195,6 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI, registry: R
           const tmpPath = resolve(dirname(absolutePath), `.${randomUUID()}.tmp`);
           await writeFile(tmpPath, finalContent, 'utf-8');
           await rename(tmpPath, absolutePath);
-
-          // --- Our edit result holds the new file state — model's knowledge is fresh ---
-          registry.selfRefresh(absolutePath);
 
           const diffResult = generateDiffString(content, result.content);
           return {

@@ -1,24 +1,21 @@
 // Integration tests for the tool adapter — temp files, atomic write, error
-// paths, stale-read wiring, replaceAll, deprecated aider input. Runs the
-// tool's execute() directly with a mocked pi surface.
+// paths, replaceAll, deprecated aider input. Runs the tool's execute()
+// directly with a mocked pi surface.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { ReadRegistry } from '../src/domain/stale-read';
 import { createRobustEditTool } from '../src/pi/tool';
 
 let dir: string;
 let cwd: string;
-let registry: ReadRegistry;
 let tool: ReturnType<typeof createRobustEditTool>;
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'pi-robust-edit-'));
   cwd = dir;
-  registry = new ReadRegistry({ stat: (_p) => ({ mtimeMs: Date.now() - 1000 }) });
-  tool = createRobustEditTool(cwd, {} as never, registry);
+  tool = createRobustEditTool(cwd, {} as never);
 });
 
 afterAll(async () => {
@@ -203,40 +200,6 @@ describe('edit tool execute (primary contract)', () => {
     expect(err.editError.closestCandidate.candidate).toContain('const actual = 42;');
   });
 
-  it('fails with stale-read when the file changed since the last read', async () => {
-    await writeFixture('stale.ts', 'x\n');
-    const mtime = Date.now() + 60_000;
-    registry = new ReadRegistry({ stat: () => ({ mtimeMs: mtime }) });
-    registry.record(join(dir, 'stale.ts'));
-    const staleTool = createRobustEditTool(cwd, {} as never, registry);
-    const err = await staleTool
-      .execute(
-        '1',
-        editsFor('stale.ts', [{ oldText: 'x', newText: 'y' }]),
-        undefined,
-        undefined,
-        {},
-      )
-      .then(() => null)
-      .catch((e) => e);
-    expect((err as Error).message).toContain('changed since you last read it');
-    expect(err.editError.kind).toBe('stale-read');
-  });
-
-  it('self-refreshes the registry after a successful edit', async () => {
-    const p = await writeFixture('refresh.ts', 'x\n');
-    const reg = new ReadRegistry({ stat: () => ({ mtimeMs: Date.now() + 5000 }) });
-    const freshTool = createRobustEditTool(cwd, {} as never, reg);
-    await freshTool.execute(
-      '1',
-      editsFor('refresh.ts', [{ oldText: 'x', newText: 'y' }]),
-      undefined,
-      undefined,
-      {},
-    );
-    expect(reg.lastRead(p)).toBeDefined();
-  });
-
   it('rejects empty edits with a validation error', async () => {
     const err = await tool
       .execute('1', { path: 'x.ts', edits: [] }, undefined, undefined, {})
@@ -248,7 +211,7 @@ describe('edit tool execute (primary contract)', () => {
 
   it('resolves paths against the SESSION cwd, not the load cwd', async () => {
     const realDir = dir;
-    const bogusTool = createRobustEditTool('/nonexistent-launch-dir', {} as never, registry);
+    const bogusTool = createRobustEditTool('/nonexistent-launch-dir', {} as never);
     await writeFixture('session-cwd.ts', 'let a = 1;\n');
     const result = await bogusTool.execute(
       '1',
@@ -344,5 +307,53 @@ describe('prepareArguments normalization', () => {
     );
     expect(result.content[0].text).toContain('Successfully replaced');
     expect(await readFile(join(dir, 'resume.ts'), 'utf-8')).toBe('goodbye\n');
+  });
+
+  it('surfaces a malformed aider patch as a typed malformed-patch error (not a raw exception)', async () => {
+    const err = await tool
+      .execute(
+        '1',
+        { patch: 'bad.ts\n<<<<<<< SEARCH\n=======\n>>>>>>> REPLACE' } as never,
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e) => e);
+    expect(err).not.toBeNull();
+    expect(err.editError.kind).toBe('malformed-patch');
+    expect((err as Error).message).toContain('SEARCH block with no content');
+  });
+
+  it('reports a missing path as a typed missing-path error (A-2)', async () => {
+    // --- aider block with no path header and no top-level path -> empty path ---
+    const err = await tool
+      .execute(
+        '1',
+        { patch: '<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE' } as never,
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e) => e);
+    expect(err).not.toBeNull();
+    expect(err.editError.kind).toBe('missing-path');
+  });
+
+  it('applies a multi-line edit to a CRLF file (preview and apply agree on LF content)', async () => {
+    const p = join(dir, 'crlf.ts');
+    await writeFile(p, 'let a = 1;\r\nlet b = 2;\r\n', 'utf-8');
+    const result = await tool.execute(
+      '1',
+      editsFor('crlf.ts', [
+        { oldText: 'let a = 1;\nlet b = 2;', newText: 'let a = 9;\nlet b = 8;' },
+      ]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(p, 'utf-8')).toBe('let a = 9;\r\nlet b = 8;\r\n');
   });
 });

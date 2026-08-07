@@ -7,17 +7,10 @@ import {
   noOpError,
   notFoundError,
   overlappingError,
-  staleReadError,
   validationError,
 } from '../src/domain/errors';
 
 describe('error builders', () => {
-  it('stale-read carries the paper guidance', () => {
-    const err = staleReadError();
-    expect(err.kind).toBe('stale-read');
-    expect(err.message).toContain('re-read the file and retry');
-  });
-
   it('ambiguous lists 1-indexed line positions', () => {
     const err = ambiguousError('src/foo.ts', 3, [3, 7, 12]);
     expect(err.kind).toBe('ambiguous');

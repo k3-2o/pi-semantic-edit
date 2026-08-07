@@ -39,7 +39,6 @@ Every failed edit leaves the file untouched and states **what was found** and **
 
 - Ambiguous → line positions + "or set replaceAll: true"
 - Not found → closest candidate + similarity percentage, correct against it
-- Stale → re-read the file and retry
 - Disproportionate → matched span too large, provide the full exact text
 - Overlap / no-op / validation → explicit reason and the fix
 
@@ -56,7 +55,8 @@ The measure of success: the model never reaches for a python script, `awk`, or `
 | Whole-file rewrite format | A second model-facing format reintroduces the format-choice problem; models already have the `write` tool |
 | Incremental multi-edit | Strictly more failure-prone; the built-in promises non-incremental matching |
 | LSP diagnostics feedback | Violates the zero-dependency constraint; heavier than coherence warnings |
-| Content-snapshot stale guard | Needs permission-layer cooperation the extension architecture doesn't have; mtime + 50ms tolerance is the paper-confirmed reference design |
+| Content-snapshot stale guard | Needs permission-layer cooperation the extension architecture doesn't have; the mtime registry (adopted from the paper's §2.4.2) was tried and then removed — see below |
+| Stale-read guard (`ReadRegistry`, mtime + 50ms) | **Removed 2026-08-04.** Adopted from a *paper description* (§2.4.2) that its author's own product never shipped (OpenDev's code has no stale-read; Pi has none). Smooth consecutive edits and never-read files were already handled, so the guard fired only on external writes. Value was narrow — it uniquely caught *matching edits mis-targeted by a stale mental model* — and that failure mode has **zero observed instances** anywhere, while the cost was observed: refusal loops whenever a formatter/git/editor touched a file after the read force a re-read (real token waste, and a model friction that deity reported in the wild as needing to "give it time to cache"). Not-found + closest-candidate already covers the wrong-content case. Removed entirely and struck from D3. **Removal precedent: reject-by-observed-cost — the remove-direction counterpart of PROPOSAL-11's reject-by-no-observed-benefit.** Both are the same data-first doctrine applied either way |
 | Pass 11 `unicode_trimmed` (compose pass 2 + pass 10) | PROPOSAL-11, 2026-08-03. The one analytic construction where the built-in's fused pass wins and all 10 passes fail (query dirtier than file in *both* trailing whitespace and typographic punctuation) is real — verified — but has **zero observed instances** across the torture suite, OpenDev's failure logs, and reviewed benchmarks. A pass entered on reasoning alone sets the precedent that the chain grows by hypothesis instead of by failure data; it is joint scoring in narrow dress (a match that names a blend, not a cause). The miss already costs one cheap round-trip via the closest-candidate fallback. **Re-entry trigger: implement only when a wild failure matching PROPOSAL-11 §2.3 is observed — and then with the fast-path fixed to test normalization identity, not ASCII** (the sketched fast-path fails inside its own gap class) |
 
 ## Sources

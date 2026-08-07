@@ -65,7 +65,6 @@ type EditErrorKind =
   | 'malformed-patch'
   | 'missing-path'
   | 'file-not-found'
-  | 'stale-read'
   | 'ambiguous'
   | 'not-found'
   | 'overlapping'

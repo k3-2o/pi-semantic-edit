@@ -54,7 +54,6 @@ Passes run in order, short-circuiting on the first match. Every pass returns onl
 | replaceAll | Skips the ambiguity check and replaces every occurrence of the matched text; the summary reports the total replacement count |
 | Disproportionate-match refusal | If a fuzzy pass matches a span much larger than `oldText`, the edit is refused — never a silent wrong-location edit |
 | Actual-substring return | The replacement targets the real file text (not the query), preserving genuine formatting |
-| Stale-read detection | Rejects edits when the file's mtime is newer than the model's last read (50ms tolerance) |
 | Closest-candidate feedback | On no-match, reports the nearest real text with a similarity percentage |
 | Coherence warnings | Non-blocking warnings for unbalanced braces and suspicious indentation jumps after applying |
 
@@ -65,7 +64,6 @@ Passes run in order, short-circuiting on the first match. Every pass returns onl
 | No edits in the call | Validation error |
 | Edit without a path | Validation error |
 | File not found / not writable | File error with code |
-| File changed since last read | Stale-read error with re-read guidance |
 | Text matches multiple locations (no `replaceAll`) | Ambiguous error with line positions + replaceAll hint |
 | Fuzzy match much larger than the query | Disproportionate error, nothing written |
 | No match at all | Not-found error with closest candidate |

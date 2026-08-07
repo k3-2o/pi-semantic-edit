@@ -8,7 +8,7 @@ import { resolve } from 'path';
 import { Box, Container, getCapabilities, hyperlink, Spacer, Text } from '@earendil-works/pi-tui';
 import { renderDiff, generateDiffString } from '@earendil-works/pi-coding-agent';
 import { applyBlocks } from '../domain/editor';
-import { resolveToCwd, stripBom } from '../domain/utils';
+import { resolveToCwd, normalizeNewlines, stripBom } from '../domain/utils';
 import { normalizeEditArgs } from './normalize';
 
 export interface EditPreview {
@@ -244,7 +244,9 @@ async function computePreviewDiff(input: unknown, cwd: string): Promise<EditPrev
     const absolutePath = resolveToCwd(first.path, cwd);
     await fsAccess(absolutePath, constants.R_OK);
     const rawContent = await readFile(absolutePath, 'utf-8');
-    const { text: content } = stripBom(rawContent);
+    const { text } = stripBom(rawContent);
+    // --- Matcher and apply operate on LF-normalized content (same as tool.execute), so the preview and the edit agree ---
+    const content = normalizeNewlines(text);
     const result = applyBlocks(content, reqs, first.path);
     if (!result.ok || result.content === undefined) {
       return { error: result.error?.message ?? 'Edit could not be applied.' };

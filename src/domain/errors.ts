@@ -3,14 +3,6 @@
 import { formatLinePositions } from './uniqueness';
 import type { ClosestCandidate, EditError } from './types';
 
-export function staleReadError(): EditError {
-  return {
-    kind: 'stale-read',
-    message:
-      'The file has changed since you last read it; re-read the file and retry your edit with the current content.',
-  };
-}
-
 export function ambiguousError(path: string, count: number, positions: number[]): EditError {
   return {
     kind: 'ambiguous',

@@ -10,10 +10,9 @@ Drop-in replacement for Pi's built-in `edit`. Same `edits[]` contract, so the mo
 
 The built-in edit is strict. `oldText` has to match the file byte for byte, and when it doesn't the model retries in the dark. This one runs the text through a 10-pass fuzzy chain (line trim, indentation, escaped sequences, Unicode quotes and dashes) before giving up. Every pass re-verifies its match against the actual file, so tolerance never turns into an edit at the wrong location.
 
-Two behaviors the built-in lacks:
+A behavior the built-in lacks:
 
 - `replaceAll: true` on an edit replaces every occurrence. That's what renames actually need; without it a multi-match fails with the line positions and you add context.
-- Stale-read rejection. If the file changed since the model last read it, the edit is refused with a re-read message instead of silently landing on stale content.
 
 On no-match the error quotes the closest real text plus a similarity percentage, so the retry targets what's actually in the file, not what the model remembers.
 
