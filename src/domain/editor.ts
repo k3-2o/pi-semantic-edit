@@ -12,7 +12,6 @@ import {
 import { reportOccurrences } from './uniqueness';
 import type { EditError, EditRequest, FailedEdit, MatchResult, ResolvedEdit } from './types';
 
-// --- Auto-expand cap: total lines added around a match (half above, half below) ---
 const MAX_EXPAND_LINES = 10;
 
 export interface ResolveBlocksResult {
@@ -21,7 +20,6 @@ export interface ResolveBlocksResult {
   error?: EditError;
 }
 
-// --- Match every request against ORIGINAL content (non-incremental) ---
 export function resolveBlocks(
   content: string,
   blocks: EditRequest[],
@@ -30,15 +28,28 @@ export function resolveBlocks(
   const resolved: ResolvedEdit[] = [];
   for (const block of blocks) {
     if (block.oldText.length === 0) {
+      if (content.length === 0) {
+        resolved.push({
+          edit: { path, oldText: block.oldText, newText: block.newText },
+          match: { actual: '', passName: 'simple' },
+          start: 0,
+          end: 0,
+        });
+        continue;
+      }
       return {
         ok: false,
-        error: validationError('oldText is empty; provide the exact text to find.'),
+        error: validationError(
+          'oldText is empty and the file is not empty. Quote the first line, or use write.',
+        ),
       };
     }
     if (block.oldText === block.newText) {
       return {
         ok: false,
-        error: validationError('oldText and newText are identical; this edit does nothing.'),
+        error: validationError(
+          'oldText and newText are identical (no-op). Change newText or drop the edit.',
+        ),
       };
     }
 
@@ -48,12 +59,10 @@ export function resolveBlocks(
       return { ok: false, error: notFoundError(path, closest ?? undefined) };
     }
 
-    // --- Refuse fuzzy matches spanning far more than the query — wrong-edit near-miss (OpenCode port) ---
     if (isDisproportionateMatch(match.actual, block.oldText)) {
       return { ok: false, error: disproportionateError(path) };
     }
 
-    // --- replaceAll: replace EVERY occurrence of the matched actual text; spans never overlap (indexOf advances) ---
     if (block.replaceAll) {
       const spans = findAllSpans(content, match.actual);
       if (spans.length === 0) {
@@ -63,7 +72,6 @@ export function resolveBlocks(
         };
       }
       for (const span of spans) {
-        // --- Fuzzy passes can over-reach even on 1-line queries (unicode pass) — guard per span ---
         const actual = content.slice(span.start, span.end);
         if (isDisproportionateMatch(actual, block.oldText)) {
           return { ok: false, error: disproportionateError(path) };
@@ -110,9 +118,11 @@ export interface ApplyBlocksResult {
   ok: boolean;
   content?: string;
   error?: EditError;
-  // --- pass names per applied edit (OpenDev match_pass parity) ---
+
   matchPasses: string[];
-  // --- total spans replaced (replaceAll can consume many for one edit) ---
+
+  spans: { start: number; end: number; passName: string }[];
+
   replacements: number;
 }
 
@@ -123,18 +133,25 @@ export function applyBlocks(
 ): ApplyBlocksResult {
   const outcome = resolveBlocks(content, blocks, path);
   if (!outcome.ok || !outcome.resolved) {
-    return { ok: false, error: outcome.error, matchPasses: [], replacements: 0 };
+    return { ok: false, error: outcome.error, matchPasses: [], spans: [], replacements: 0 };
   }
 
   const result = applyEdits(content, outcome.resolved);
   if (result.failed.length > 0) {
-    return { ok: false, error: failureToError(result.failed[0]), matchPasses: [], replacements: 0 };
+    return {
+      ok: false,
+      error: failureToError(result.failed[0]),
+      matchPasses: [],
+      spans: [],
+      replacements: 0,
+    };
   }
 
   return {
     ok: true,
     content: result.content,
     matchPasses: result.applied.map((a) => a.match.passName),
+    spans: result.applied.map((a) => ({ start: a.start, end: a.end, passName: a.match.passName })),
     replacements: result.applied.length,
   };
 }
@@ -149,8 +166,6 @@ function failureToError(f: FailedEdit): EditError {
       return validationError(f.reason);
   }
 }
-
-// --- Auto-expand: grow context around each occurrence until exactly ONE is unique; expansion only locates, the replacement targets the ORIGINAL span ---
 
 function tryAutoExpand(
   content: string,
@@ -173,7 +188,6 @@ function tryAutoExpand(
   const maxLevel = MAX_EXPAND_LINES;
 
   for (let level = 0; level < maxLevel; level++) {
-    // --- Expand alternately: above, below, above, below… ---
     if (level % 2 === 0) {
       if (above >= half) continue;
       above++;
@@ -190,6 +204,7 @@ function tryAutoExpand(
 
     const uniqueIdx = findSingleUnique(expandedBlocks, content);
     if (uniqueIdx !== null) {
+      if (countOccurrences(expandedBlocks[uniqueIdx], actual) > 1) return null;
       const span = spans[uniqueIdx];
       return {
         edit: { path, oldText: block.oldText, newText: block.newText },
@@ -198,7 +213,7 @@ function tryAutoExpand(
         end: span.end,
       };
     }
-    // --- Multiple uniques stay unique under extension — bail (genuine ambiguity) ---
+
     if (expandedBlocks.filter((b) => countOccurrences(content, b) === 1).length > 1) return null;
   }
   return null;
@@ -216,7 +231,6 @@ function findAllSpans(content: string, needle: string): { start: number; end: nu
   return spans;
 }
 
-// --- OpenCode isDisproportionateMatch: matched span must not dwarf the query; 1-line queries exempt (over-reaching passes need ≥2 lines) ---
 function isDisproportionateMatch(search: string, oldText: string): boolean {
   const oldLines = oldText.split('\n').length;
   const searchLines = search.split('\n').length;
@@ -237,7 +251,6 @@ function countOccurrences(content: string, needle: string): number {
   return count;
 }
 
-// --- Index of the line containing char offset in lines (joined by \n) ---
 function lineIndexAt(lines: string[], offset: number): number {
   let remaining = offset;
   for (let i = 0; i < lines.length; i++) {
@@ -252,7 +265,7 @@ function findSingleUnique(blocks: string[], content: string): number | null {
   let uniqueIdx: number | null = null;
   for (let i = 0; i < blocks.length; i++) {
     if (countOccurrences(content, blocks[i]) === 1) {
-      if (uniqueIdx !== null) return null; // more than one unique → ambiguous
+      if (uniqueIdx !== null) return null;
       uniqueIdx = i;
     }
   }

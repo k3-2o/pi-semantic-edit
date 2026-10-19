@@ -16,7 +16,7 @@ describe('error builders', () => {
     expect(err.kind).toBe('ambiguous');
     expect(err.message).toContain('3 times');
     expect(err.message).toContain('line 3, line 7, line 12');
-    expect(err.message).toContain('Provide more surrounding context');
+    expect(err.message).toContain('Add context');
     expect(err.linePositions).toEqual([3, 7, 12]);
   });
 
@@ -26,7 +26,6 @@ describe('error builders', () => {
     expect(err.closestCandidate).toBeUndefined();
     expect(err.message).toContain('not found in src/foo.ts');
     expect(err.message).toContain('Re-read the file');
-    expect(err.message).toContain('retry with the exact text');
   });
 
   it('not-found with closest includes candidate preview and similarity', () => {
@@ -78,11 +77,26 @@ describe('error builders', () => {
   it('other builders are well-formed with next-move guidance', () => {
     expect(missingPathError().kind).toBe('missing-path');
     expect(fileNotFoundError('x.ts').message).toContain('File not found: x.ts');
-    expect(fileNotFoundError('x.ts').message).toContain('use write to create the file');
+    expect(fileNotFoundError('x.ts').message).toContain('use write to create it');
     expect(overlappingError('edit A overlaps edit B').message).toContain('Overlapping edits');
-    expect(overlappingError('edit A overlaps edit B').message).toContain('disjoint region');
+    expect(overlappingError('edit A overlaps edit B').message).toContain('disjoint');
     expect(noOpError().kind).toBe('no-op');
     expect(noOpError().message).toContain('Change newText');
     expect(validationError('oldText is empty').kind).toBe('validation');
   });
+});
+
+it('not-found with lineDiffs spells out the differing lines', () => {
+  const err = notFoundError('f.ts', {
+    passName: 'closest-candidate',
+    similarity: 0.95,
+    candidate: 'aaa\nbbb-x\nccc',
+    startLine: 1,
+    endLine: 3,
+    lineDiffs: [{ lineNumber: 2, yours: 'bbb', file: 'bbb-x' }],
+  });
+  expect(err.message).toContain('Lines that differ:');
+  expect(err.message).toContain('line 2');
+  expect(err.message).toContain('file has "bbb-x"');
+  expect(err.message).toContain('you wrote "bbb"');
 });

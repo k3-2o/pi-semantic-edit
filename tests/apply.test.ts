@@ -4,7 +4,6 @@ import { findMatch } from '../src/domain/chain';
 import { reportOccurrences, formatLinePositions } from '../src/domain/uniqueness';
 import type { ResolvedEdit } from '../src/domain/types';
 
-/** Helper: match an edit against content and resolve its unique span. */
 function resolve(content: string, path: string, oldText: string, newText: string): ResolvedEdit {
   const match = findMatch(content, oldText);
   if (!match) throw new Error(`no match for: ${oldText}`);
@@ -55,7 +54,7 @@ describe('applyEdits', () => {
     const content = 'a\nbb\nc';
     const e1 = resolve(content, 'f.ts', 'a', 'A');
     const e2 = resolve(content, 'f.ts', 'bb', 'BB');
-    // e1 is at index 0, e2 at index 2 — bottom-up applies e2 first
+
     const result = applyEdits(content, [e1, e2]);
     expect(result.failed).toEqual([]);
     expect(result.content).toBe('A\nBB\nc');
@@ -63,14 +62,14 @@ describe('applyEdits', () => {
 
   it('detects overlapping edits', () => {
     const content = 'abcde';
-    // "abc" spans 0..3, "bcd" spans 1..4 — overlap
+
     const e1 = resolve(content, 'f.ts', 'abc', 'X');
     const e2 = resolve(content, 'f.ts', 'bcd', 'Y');
     const result = applyEdits(content, [e1, e2]);
     expect(result.applied).toEqual([]);
     expect(result.failed).toHaveLength(1);
     expect(result.failed[0].reason).toContain('overlap');
-    expect(result.content).toBe(content); // untouched
+    expect(result.content).toBe(content);
   });
 
   it('rejects no-op edits (old == new)', () => {

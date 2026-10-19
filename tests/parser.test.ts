@@ -164,7 +164,6 @@ describe('parseAiderBlocks: edge cases', () => {
   });
 
   it('unterminated block consumes to end without throwing', () => {
-    // Missing REPLACE marker: block runs to end of input.
     const patch = ['f.ts', '<<<<<<< SEARCH', 'a', '=======', 'b'].join('\n');
     const blocks = parseAiderBlocks(patch);
     expect(blocks).toHaveLength(1);
@@ -172,8 +171,6 @@ describe('parseAiderBlocks: edge cases', () => {
   });
 
   it('indented markers inside content are respected at line start', () => {
-    // A line starting with spaces then >>>>>>> still terminates (aider parity:
-    // markers are matched with leading whitespace tolerance).
     const patch = ['f.ts', '<<<<<<< SEARCH', 'a', '=======', 'b', '  >>>>>>> REPLACE'].join('\n');
     const blocks = parseAiderBlocks(patch);
     expect(blocks).toHaveLength(1);

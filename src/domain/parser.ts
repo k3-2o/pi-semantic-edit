@@ -1,11 +1,9 @@
-// --- Aider SEARCH/REPLACE parser — deprecated legacy input (primary is edits[], see normalize.ts); kept for session resume ---
-
 import type { ParsedBlock } from './types';
 
 export class MalformedPatchError extends Error {
   constructor(
     message: string,
-    public readonly index: number, // --- line index (0-based) where parsing failed ---
+    public readonly index: number,
   ) {
     super(message);
     this.name = 'MalformedPatchError';
@@ -87,17 +85,16 @@ function parseBlock(lines: string[], start: number): ParsedBlockRaw {
         phase = 'new';
         continue;
       }
-      // --- A second ======= while in 'new' is content, not a separator ---
+
       newLines.push(curr);
       continue;
     }
 
     if (trimmed.startsWith('>>>>>>>')) {
-      i++; // --- consume the REPLACE marker ---
+      i++;
       break;
     }
 
-    // --- Fence lines inside a block are content; the block ends at the REPLACE marker ---
     if (phase === 'old') oldLines.push(curr);
     else newLines.push(curr);
   }

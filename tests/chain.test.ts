@@ -26,7 +26,6 @@ describe('findMatch chain behavior', () => {
   });
 
   it('progresses to later passes only when earlier ones fail', () => {
-    // indentation drift: line_trimmed catches it before block_anchor
     const original = 'fn foo() {\n    let x = 1;\n    let y = 2;\n}';
     const result = findMatch(original, 'let x = 1;\nlet y = 2;');
     expect(result!.passName).toBe('line_trimmed');
@@ -39,12 +38,11 @@ describe('findMatch chain behavior', () => {
   });
 
   it('unicode pass catches single-line curly-quote drift (pass 10)', () => {
-    // The smoke-test #9 single-line case: passes 1-9 all fail, unicode catches it
     const original = 'const config = {\n  name: "demo",\n  retries: 3,\n};';
     const result = findMatch(original, '  name: \u201cdemo\u201d,');
     expect(result).not.toBeNull();
     expect(result!.passName).toBe('unicode_normalized');
-    expect(result!.actual).toBe('  name: "demo",'); // verbatim original returned
+    expect(result!.actual).toBe('  name: "demo",');
   });
 
   it('returns null when nothing matches', () => {
@@ -52,16 +50,12 @@ describe('findMatch chain behavior', () => {
   });
 
   it('later passes resolve drift earlier passes reject', () => {
-    // escape drift: passes 1-5 fail, pass 6 catches it
     const original = 'let s = "hello\nworld";';
     const result = findMatch(original, 'let s = "hello\\nworld";');
     expect(result!.passName).toBe('escape_normalized');
   });
 
   it('multi_occurrence is defense-in-depth (rarely reachable by design)', () => {
-    // Empirically, earlier passes (line_trimmed, indentation_flexible) resolve
-    // everything multi_occurrence would — it stays registered as the final
-    // guard. Its semantics are pinned directly in passes.test.ts.
     const original = '    x\n        y\n    ';
     const result = findMatch(original, '\nx\n  y\n');
     expect(result).not.toBeNull();

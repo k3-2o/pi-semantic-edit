@@ -22,12 +22,10 @@ describe('similarity (LCS ratio)', () => {
   });
 
   it('shared subsequence counts (not substring)', () => {
-    // "ace" is a common subsequence of "abcde" and "ace": 2*3/(5+3)=0.75
     expect(similarity('abcde', 'ace')).toBeCloseTo(0.75, 5);
   });
 
   it('block-anchor threshold scale: near-identical middles score high', () => {
-    // The block-anchor pass uses > 0.3 for multi-candidate matches.
     const high = similarity(
       'let a = 1;\nlet b = 2;\nlet c = 3;',
       'let a = 10;\nlet b = 20;\nlet c = 30;',

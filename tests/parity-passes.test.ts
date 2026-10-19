@@ -1,11 +1,3 @@
-// PARITY SUITE — every test case from OpenDev's edit_replacers/tests.rs
-// (Rust), translated to bun:test against our TypeScript port. These are the
-// proof that the port matches the reference implementation's semantics.
-// Source: .vscode/research/opendev-source/tests.rs
-//
-// Omitted by design: unified_diff tests (we render diffs via Pi's
-// generateDiffString — see SPEC D6).
-
 import { describe, expect, it } from 'bun:test';
 import { findMatch, findOccurrencePositions } from '../src/domain/chain';
 import { similarity } from '../src/domain/similarity';
@@ -224,7 +216,6 @@ describe('parity: find_occurrence_positions', () => {
     expect(findOccurrencePositions('abc', 'abc')).toEqual([1]);
   });
   it('multibyte utf8 (no panic, line counting)', () => {
-    // 🌍 is 4 bytes in UTF-8; JS indexes by code units — must not break.
     expect(findOccurrencePositions('a🌍b🌍c', '🌍')).toEqual([1, 1]);
   });
   it('empty needle does not panic and finds something', () => {

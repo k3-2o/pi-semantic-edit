@@ -1,7 +1,3 @@
-// Integration tests for the tool adapter — temp files, atomic write, error
-// paths, replaceAll, deprecated aider input. Runs the tool's execute()
-// directly with a mocked pi surface.
-
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -28,7 +24,6 @@ async function writeFixture(name: string, content: string): Promise<string> {
   return filePath;
 }
 
-/** Primary-contract args helper: { path, edits: [{oldText, newText, replaceAll?}] }. */
 function editsFor(
   path: string,
   edits: { oldText: string; newText: string; replaceAll?: boolean }[],
@@ -46,7 +41,7 @@ describe('edit tool execute (primary contract)', () => {
       undefined,
       {},
     );
-    expect(result.content[0].text).toContain('Successfully replaced 1 replacement');
+    expect(result.content[0].text).toBe('Successfully replaced 1 block(s) in simple.ts.');
     expect(await readFile(join(dir, 'simple.ts'), 'utf-8')).toBe('let x = 2;\n');
     expect(result.details.diff).toContain('-1 let x = 1;');
   });
@@ -62,7 +57,7 @@ describe('edit tool execute (primary contract)', () => {
     );
     expect(await readFile(join(dir, 'fuzzy.ts'), 'utf-8')).toBe('let x = 2;\n');
     expect(result.details.matchPasses).toContain('whitespace_normalized');
-    expect(result.content[0].text).toContain('Match passes');
+    expect(result.content[0].text).toBe('Successfully replaced 1 block(s) in fuzzy.ts.');
   });
 
   it('applies multiple edits in one call', async () => {
@@ -77,7 +72,7 @@ describe('edit tool execute (primary contract)', () => {
       undefined,
       {},
     );
-    expect(result.content[0].text).toContain('2 edit(s)');
+    expect(result.content[0].text).toBe('Successfully replaced 2 block(s) in multi.ts.');
     expect(await readFile(join(dir, 'multi.ts'), 'utf-8')).toBe('A\nb\nC\n');
   });
 
@@ -118,9 +113,7 @@ describe('edit tool execute (primary contract)', () => {
     expect(await readFile(join(dir, 'rename.ts'), 'utf-8')).toBe(
       'const item = 1;\nconst b = item + item;\nconsole.log(item);\n',
     );
-    expect(result.content[0].text).toContain('4 replacements');
-    expect(result.content[0].text).toContain('1 edit(s)');
-    // one edit consumed 4 spans → 4 replace_all entries (per-span pass names)
+    expect(result.content[0].text).toBe('Successfully replaced 1 block(s) in rename.ts.');
     expect(result.details.matchPasses).toEqual([
       'replace_all',
       'replace_all',
@@ -150,7 +143,7 @@ describe('edit tool execute (primary contract)', () => {
     const content = await readFile(join(dir, 'multi-rename.ts'), 'utf-8');
     expect(content).toContain('function f() {\n  const { id, label } = item;\n}');
     expect(content).not.toContain('const id = 1;');
-    // only the exact block (id=1/label="x") matched — the g() block stays
+
     expect(content).toContain('const id = 2;');
   });
 
@@ -249,8 +242,7 @@ describe('prepareArguments normalization', () => {
         { oldText: 'c', newText: 'd' },
       ],
     };
-    // prepareArguments returns { path, edits } — each request carries its own
-    // path (normalized shape) and replaceAll is explicit false when absent.
+
     expect(tool.prepareArguments(input)).toEqual({
       path: 'a.ts',
       edits: [
@@ -271,7 +263,7 @@ describe('prepareArguments normalization', () => {
     expect(prepared.path).toBe('legacy.ts');
     expect(prepared.edits).toHaveLength(2);
     expect(prepared.edits[0].oldText).toBe('a');
-    // malformed JSON string falls through unchanged
+
     expect(tool.prepareArguments({ path: 'x.ts', edits: 'not-json' })).toEqual({
       path: 'x.ts',
       edits: 'not-json',
@@ -326,7 +318,6 @@ describe('prepareArguments normalization', () => {
   });
 
   it('reports a missing path as a typed missing-path error (A-2)', async () => {
-    // --- aider block with no path header and no top-level path -> empty path ---
     const err = await tool
       .execute(
         '1',
@@ -355,5 +346,391 @@ describe('prepareArguments normalization', () => {
     );
     expect(result.content[0].text).toContain('Successfully replaced');
     expect(await readFile(p, 'utf-8')).toBe('let a = 9;\r\nlet b = 8;\r\n');
+  });
+});
+
+interface FakeHarness {
+  pi: { on: (event: string, handler: (e: unknown, ctx?: unknown) => void) => () => void };
+  emit: (event: string, payload: unknown, ctx?: unknown) => Promise<void>;
+}
+
+function fakePi(): FakeHarness {
+  const handlers: Record<string, ((e: unknown, ctx?: unknown) => void)[]> = {};
+  return {
+    pi: {
+      on(event: string, handler: (e: unknown, ctx?: unknown) => void) {
+        (handlers[event] ??= []).push(handler);
+        return () => {};
+      },
+    },
+    async emit(event: string, payload: unknown, ctx?: unknown) {
+      for (const h of handlers[event] ?? []) await h(payload, ctx);
+    },
+  };
+}
+
+async function simulateRead(harness: FakeHarness, path: string, ctx?: { cwd?: string }) {
+  await harness.emit(
+    'tool_result',
+    {
+      toolName: 'read',
+      toolCallId: 'r1',
+      input: { path },
+      content: [{ type: 'text', text: 'file' }],
+      isError: false,
+    },
+    ctx,
+  );
+}
+
+async function simulateOwnEdit(harness: FakeHarness, input: unknown, isError = false) {
+  await harness.emit('tool_result', {
+    toolName: 'edit',
+    toolCallId: 'e1',
+    input,
+    content: [{ type: 'text', text: '' }],
+    isError,
+  });
+}
+
+async function simulateWrite(harness: FakeHarness, input: unknown, ctx?: { cwd?: string }) {
+  await harness.emit(
+    'tool_result',
+    {
+      toolName: 'write',
+      toolCallId: 'w1',
+      input,
+      content: [{ type: 'text', text: '' }],
+      isError: false,
+    },
+    ctx,
+  );
+}
+
+describe('stale-read guard (integration)', () => {
+  let harness: FakeHarness;
+  let stTool: ReturnType<typeof createRobustEditTool>;
+
+  beforeAll(() => {
+    harness = fakePi();
+    stTool = createRobustEditTool(cwd, harness.pi as never);
+  });
+
+  it('refuses an edit that absorbed content drift after the model read', async () => {
+    await writeFixture('b3.ts', 'function b() {\n  return 2;\n}\n');
+    await simulateRead(harness, 'b3.ts', { cwd });
+
+    await writeFile(join(dir, 'b3.ts'), 'function b() {\n  return 2; // drifted\n}\n', 'utf-8');
+
+    const err = await stTool
+      .execute(
+        '1',
+        editsFor('b3.ts', [
+          {
+            oldText: 'function b() {\n  return 2;\n}\n',
+            newText: 'function b() {\n  return 2;\n};\n',
+          },
+        ]),
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e: Error & { editError?: { kind?: string } }) => e);
+
+    expect(err).not.toBeNull();
+    expect(err?.editError?.kind).toBe('stale-read');
+    expect(err?.message).toContain('line 2');
+    expect(await readFile(join(dir, 'b3.ts'), 'utf-8')).toBe(
+      'function b() {\n  return 2; // drifted\n}\n',
+    );
+  });
+
+  it('refuses a simple match nested inside a changed token (bbb inside bbb-x)', async () => {
+    await writeFixture('b2.ts', 'aaa\nbbb\nccc\n');
+    await simulateRead(harness, 'b2.ts', { cwd });
+    await writeFile(join(dir, 'b2.ts'), 'aaa\nbbb-x\nccc\n', 'utf-8');
+
+    const err = await stTool
+      .execute(
+        '1',
+        editsFor('b2.ts', [{ oldText: 'bbb', newText: 'BBB' }]),
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e: Error & { editError?: { kind?: string } }) => e);
+
+    expect(err?.editError?.kind).toBe('stale-read');
+    expect(err?.message).toContain('currently: bbb-x');
+    expect(await readFile(join(dir, 'b2.ts'), 'utf-8')).toBe('aaa\nbbb-x\nccc\n');
+  });
+
+  it('refuses an insert anchored on a line that drifted after read (context_aware)', async () => {
+    await writeFixture('race.ts', 'aaa\nbbb\nccc\n');
+    await simulateRead(harness, 'race.ts', { cwd });
+    await writeFile(join(dir, 'race.ts'), 'aaa\nbbb-x\nccc\n', 'utf-8');
+
+    const err = await stTool
+      .execute(
+        '1',
+        editsFor('race.ts', [{ oldText: 'bbb\nccc', newText: 'bbb\nBB1\nBB2\nccc' }]),
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e: Error & { editError?: { kind?: string } }) => e);
+
+    expect(err?.editError?.kind).toBe('stale-read');
+    expect(err?.message).toContain('line 2');
+    expect(await readFile(join(dir, 'race.ts'), 'utf-8')).toBe('aaa\nbbb-x\nccc\n');
+  });
+
+  it('recovers: after refusal, a re-read lets the edit land against current content', async () => {
+    await writeFixture('rec.ts', 'aaa\nbbb\nccc\n');
+    await simulateRead(harness, 'rec.ts', { cwd });
+    await writeFile(join(dir, 'rec.ts'), 'aaa\nbbb-x\nccc\n', 'utf-8');
+
+    await stTool
+      .execute(
+        '1',
+        editsFor('rec.ts', [{ oldText: 'bbb', newText: 'BBB' }]),
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch(() => null);
+    expect(await readFile(join(dir, 'rec.ts'), 'utf-8')).toBe('aaa\nbbb-x\nccc\n');
+
+    await simulateRead(harness, 'rec.ts', { cwd });
+    const result = await stTool.execute(
+      '2',
+      editsFor('rec.ts', [{ oldText: 'bbb-x', newText: 'BBB' }]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(join(dir, 'rec.ts'), 'utf-8')).toBe('aaa\nBBB\nccc\n');
+  });
+
+  it('allows an edit when the change is far from the target (no boundary, no absorbed drift)', async () => {
+    await writeFixture('far.ts', 'aaa\nbbb\nccc\n');
+    await simulateRead(harness, 'far.ts', { cwd });
+    await writeFile(join(dir, 'far.ts'), 'aaa-x\nbbb\nccc\n', 'utf-8');
+
+    const result = await stTool.execute(
+      '1',
+      editsFor('far.ts', [{ oldText: 'bbb', newText: 'BBB' }]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(join(dir, 'far.ts'), 'utf-8')).toBe('aaa-x\nBBB\nccc\n');
+  });
+
+  it('allows rewrite-then-edit through our own edit tool without re-reading', async () => {
+    await writeFixture('rw.ts', 'old content\n');
+
+    const result = await stTool.execute(
+      '1',
+      editsFor('rw.ts', [{ oldText: 'old content\n', newText: 'first\nsecond\n' }]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.content[0].text).toContain('Successfully replaced');
+    await simulateOwnEdit(harness, { path: 'rw.ts', edits: [] });
+
+    const result2 = await stTool.execute(
+      '2',
+      editsFor('rw.ts', [{ oldText: 'first\nsecond\n', newText: 'first\nSECOND\n' }]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result2.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(join(dir, 'rw.ts'), 'utf-8')).toBe('first\nSECOND\n');
+  });
+
+  it('allows blinder edits (no read at all) — status-quo tolerance', async () => {
+    await writeFixture('blind.ts', 'aaa\nbbb\nccc\n');
+
+    await writeFile(join(dir, 'blind.ts'), 'aaa\nbbb-x\nccc\n', 'utf-8');
+    const err = await stTool
+      .execute(
+        '1',
+        editsFor('blind.ts', [{ oldText: 'bbb', newText: 'BBB' }]),
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e: Error & { editError?: { kind?: string } }) => e);
+    expect(err).toBeNull();
+  });
+
+  it('a failed edit does not refresh the snapshot (guard still fires next time)', async () => {
+    await writeFixture('noref.ts', 'aaa\nbbb\nccc\n');
+    await simulateRead(harness, 'noref.ts', { cwd });
+    await simulateOwnEdit(harness, { path: 'noref.ts' }, true);
+    await writeFile(join(dir, 'noref.ts'), 'aaa\nbbb-x\nccc\n', 'utf-8');
+
+    const err = await stTool
+      .execute(
+        '1',
+        editsFor('noref.ts', [{ oldText: 'bbb', newText: 'BBB' }]),
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e: Error & { editError?: { kind?: string } }) => e);
+    expect(err?.editError?.kind).toBe('stale-read');
+  });
+
+  it('seeds an empty file via oldText "" (no read needed, no guard trip)', async () => {
+    await writeFixture('seed.txt', '');
+    const result = await stTool.execute(
+      '1',
+      editsFor('seed.txt', [{ oldText: '', newText: 'first\nsecond' }]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(join(dir, 'seed.txt'), 'utf-8')).toBe('first\nsecond');
+  });
+
+  it('the write tool refreshes the snapshot (bash-rewrite flow through write stays smooth)', async () => {
+    await writeFixture('wtw.ts', 'old\n');
+
+    await writeFile(join(dir, 'wtw.ts'), 'first\nsecond\n', 'utf-8');
+    await simulateWrite(harness, { path: 'wtw.ts', content: 'first\nsecond\n' }, { cwd });
+
+    const result = await stTool.execute(
+      '1',
+      editsFor('wtw.ts', [{ oldText: 'first\nsecond\n', newText: 'first\nSECOND\n' }]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(join(dir, 'wtw.ts'), 'utf-8')).toBe('first\nSECOND\n');
+  });
+});
+
+describe('legacy edit shapes survive pi argument validation (dogfood)', () => {
+  it('edits as a JSON string passes the schema and lands the edit', async () => {
+    await writeFile(join(dir, 'legacy-string.ts'), 'let x = 1;\n', 'utf-8');
+    const rawArgs = {
+      path: 'legacy-string.ts',
+      edits: JSON.stringify([{ oldText: 'let x = 1;', newText: 'let x = 2;' }]),
+    };
+    const { Compile } = await import('typebox/compile');
+    const validator = Compile((await import('../src/pi/schema')).editToolSchema);
+    expect(validator.Check(rawArgs)).toBe(true);
+    const prepared = tool.prepareArguments(rawArgs);
+    expect(validator.Check(prepared)).toBe(true);
+    expect(prepared.edits).toHaveLength(1);
+    const result = await tool.execute('1', prepared, undefined, undefined, {});
+    expect(result.content[0].text).toContain('Successfully replaced');
+    expect(await readFile(join(dir, 'legacy-string.ts'), 'utf-8')).toBe('let x = 2;\n');
+  });
+
+  it('edits as a single edit object is normalized', async () => {
+    await writeFile(join(dir, 'legacy-obj.ts'), 'aaa\nbbb\nccc\n', 'utf-8');
+    const rawArgs = { path: 'legacy-obj.ts', edits: { oldText: 'bbb', newText: 'BBB' } };
+    const prepared = tool.prepareArguments(rawArgs) as {
+      path: string;
+      edits: { oldText: string; newText: string; replaceAll: boolean }[];
+    };
+    expect(prepared.edits).toHaveLength(1);
+    expect(prepared.edits[0].oldText).toBe('bbb');
+    expect(prepared.edits[0].newText).toBe('BBB');
+    await tool.execute('1', prepared, undefined, undefined, {});
+    expect(await readFile(join(dir, 'legacy-obj.ts'), 'utf-8')).toBe('aaa\nBBB\nccc\n');
+  });
+
+  it('garbage edits JSON string yields a precise error', async () => {
+    const rawArgs = { path: 'legacy-bad.ts', edits: '{not json' };
+    const prepared = tool.prepareArguments(rawArgs);
+    expect(typeof prepared.edits).toBe('string');
+    const err = await tool
+      .execute('1', prepared, undefined, undefined, {})
+      .then(() => null)
+      .catch((e) => e);
+    expect((err as Error).message).toContain('JSON string that did not parse');
+  });
+});
+
+describe('stale-read guard span overlap (no false kick-in)', () => {
+  let harness: FakeHarness;
+  let stTool: ReturnType<typeof createRobustEditTool>;
+
+  beforeAll(() => {
+    harness = fakePi();
+    stTool = createRobustEditTool(cwd, harness.pi as never);
+  });
+
+  it('allows a content-absorbing edit when the external change is far from the span', async () => {
+    await writeFixture('far-block.ts', 'aaa\n  return data * 2;\nccc\n\n\nzzz external target\n');
+    await simulateRead(harness, 'far-block.ts', { cwd });
+    await writeFile(
+      join(dir, 'far-block.ts'),
+      'aaa\n  return data * 2;\nccc\n\n\nZZZ CHANGED EXTERNALLY\n',
+      'utf-8',
+    );
+
+    const result = await stTool.execute(
+      '1',
+      editsFor('far-block.ts', [
+        {
+          oldText: 'aaa\n  return data * 3;\nccc',
+          newText: 'aaa\n  return data * 4;\nccc',
+        },
+      ]),
+      undefined,
+      undefined,
+      {},
+    );
+    expect(result.content[0].text).toBe('Successfully replaced 1 block(s) in far-block.ts.');
+    expect(await readFile(join(dir, 'far-block.ts'), 'utf-8')).toBe(
+      'aaa\n  return data * 4;\nccc\n\n\nZZZ CHANGED EXTERNALLY\n',
+    );
+  });
+
+  it('refuses when the external change is inside the matched span (block_anchor)', async () => {
+    await writeFixture('near-block.ts', 'aaa\n  return data * 2;\nccc\n\nzzz\n');
+    await simulateRead(harness, 'near-block.ts', { cwd });
+    await writeFile(
+      join(dir, 'near-block.ts'),
+      'aaa\n  return data * 2; // drifted\nccc\n\nzzz\n',
+      'utf-8',
+    );
+
+    const err = await stTool
+      .execute(
+        '1',
+        editsFor('near-block.ts', [
+          {
+            oldText: 'aaa\n  return data * 3;\nccc',
+            newText: 'aaa\n  return data * 4;\nccc',
+          },
+        ]),
+        undefined,
+        undefined,
+        {},
+      )
+      .then(() => null)
+      .catch((e: Error & { editError?: { kind?: string } }) => e);
+    expect(err?.editError?.kind).toBe('stale-read');
+    expect(await readFile(join(dir, 'near-block.ts'), 'utf-8')).toBe(
+      'aaa\n  return data * 2; // drifted\nccc\n\nzzz\n',
+    );
   });
 });

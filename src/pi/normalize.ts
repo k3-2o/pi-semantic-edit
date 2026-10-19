@@ -1,7 +1,3 @@
-// --- Input normalization: raw tool args → domain EditRequest[]. Single source of truth for execute AND the TUI preview (render.ts) so they always agree ---
-// --- Accepted shapes (SPEC D1): edits[] primary; JSON-string edits; top-level oldText/newText; aider patch (deprecated, session resume) ---
-// --- Returns null when nothing recognizable; emptiness validated in the domain ---
-
 import { parseAiderBlocks } from '../domain/parser';
 
 export interface EditRequestLike {
@@ -33,7 +29,6 @@ function parseEditsArray(value: unknown, path: string): EditRequestLike[] {
   return result;
 }
 
-// --- Parse an aider patch string into EditRequest[] (deprecated legacy input) ---
 function editsFromPatch(patch: string, defaultPath: string): EditRequestLike[] {
   const blocks = parseAiderBlocks(patch);
   return blocks.map((b) => ({
@@ -44,12 +39,10 @@ function editsFromPatch(patch: string, defaultPath: string): EditRequestLike[] {
   }));
 }
 
-// --- Normalize raw tool args into EditRequest[]; null when nothing recognizable ---
 export function normalizeEditArgs(input: unknown): EditRequestLike[] | null {
   if (typeof input !== 'object' || input === null) return null;
   const args = input as Record<string, unknown>;
 
-  // --- 4. Deprecated aider patch input (session resume) ---
   if (typeof args.patch === 'string') {
     const fallbackPath = typeof args.path === 'string' ? args.path : '';
     return editsFromPatch(args.patch, fallbackPath);
@@ -57,24 +50,26 @@ export function normalizeEditArgs(input: unknown): EditRequestLike[] | null {
 
   const path = typeof args.path === 'string' ? args.path : '';
 
-  // --- 2. edits as a JSON string (built-in legacy parity: Opus 4.6, GLM-5.1) ---
   if (typeof args.edits === 'string') {
     try {
       const parsed = JSON.parse(args.edits);
       if (Array.isArray(parsed)) return parseEditsArray(parsed, path);
+      const parsedSingle = toEditRequest(parsed, path);
+      if (parsedSingle) return [parsedSingle];
     } catch {
-      /* --- malformed JSON — fall through --- */
+      /* --- malformed JSON fall through --- */
     }
     return null;
   }
 
-  // --- 1. Primary contract ---
   if (Array.isArray(args.edits)) {
     const reqs = parseEditsArray(args.edits, path);
     return reqs.length > 0 ? reqs : null;
   }
 
-  // --- 3. Legacy top-level oldText/newText merged into edits[] ---
+  const single = toEditRequest(args.edits, path);
+  if (single) return [single];
+
   if (typeof args.oldText === 'string' && typeof args.newText === 'string') {
     const req = toEditRequest(args, path);
     return req ? [req] : null;

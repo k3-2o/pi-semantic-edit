@@ -1,5 +1,3 @@
-// --- Applies resolved edits against ORIGINAL content, bottom-up (higher spans first) ---
-
 import type { ApplyResult, ResolvedEdit } from './types';
 import { normalizeNewlines } from './utils';
 
@@ -11,7 +9,6 @@ export function applyEdits(content: string, resolved: ResolvedEdit[]): ApplyResu
     return { content, applied, failed };
   }
 
-  // --- Overlap detection needs ascending spans ---
   const sorted = [...resolved].sort((a, b) => a.start - b.start);
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
@@ -53,7 +50,7 @@ export function applyEdits(content: string, resolved: ResolvedEdit[]): ApplyResu
       continue;
     }
     result = result.slice(0, p.start) + p.replacement + result.slice(p.end);
-    applied.push({ edit: p.edit.edit, match: p.edit.match });
+    applied.push({ edit: p.edit.edit, match: p.edit.match, start: p.start, end: p.end });
   }
 
   return { content: result, applied, failed };

@@ -1,5 +1,3 @@
-// --- Non-blocking structural warnings on the result (brace balance + indent jumps) ---
-
 export function coherenceCheck(content: string): string[] {
   const warnings: string[] = [];
   const lines = content.split('\n');
@@ -11,12 +9,11 @@ export function coherenceCheck(content: string): string[] {
   }
 
   if (balance > 0) {
-    warnings.push(`Unclosed ${balance} brace(s)/paren(s)/bracket(s).`);
+    warnings.push(`Unclosed braces/parens/brackets: ${balance}.`);
   } else if (balance < 0) {
-    warnings.push(`Too many closing braces/parens/brackets (excess: ${-balance}).`);
+    warnings.push(`Too many closing braces/parens/brackets: ${-balance}.`);
   }
 
-  // --- Flag drastic indent jumps (>4 spaces) vs. previous non-empty line ---
   for (let i = 1; i < lines.length; i++) {
     const indent = lines[i].search(/\S/);
     if (indent < 0) continue;

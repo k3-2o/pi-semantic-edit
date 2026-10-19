@@ -1,7 +1,3 @@
-// Per-pass unit tests — exact semantics, thresholds, windows, and the
-// `original.includes(actual)` safety invariant. Direct pass calls (not via
-// chain) to pin each pass's behavior independently.
-
 import { describe, expect, it } from 'bun:test';
 import {
   blockAnchorFind,
@@ -29,8 +25,6 @@ describe('simpleFind', () => {
 
 describe('lineTrimmedFind', () => {
   it('matches trailing-space drift', () => {
-    // original has trailing spaces on each line; query is clean.
-    // Actual preserves the original formatting (incl. trailing spaces).
     const original = 'a   \nb   \nc   \n';
     const old = 'a\nb\nc';
     expect(lineTrimmedFind(original, old)).toBe('a   \nb   \nc   ');
@@ -41,7 +35,6 @@ describe('lineTrimmedFind', () => {
   });
 
   it('respects line boundaries (no partial line match)', () => {
-    // "x" alone must not match the "x" inside "ax"
     const original = 'ax\nbx';
     expect(lineTrimmedFind(original, 'x')).toBeNull();
   });
@@ -53,15 +46,12 @@ describe('blockAnchorFind', () => {
   });
 
   it('single candidate → threshold 0.0 (any similarity)', () => {
-    // first/last anchors match exactly; middle is very different but it's the
-    // only candidate, so threshold is 0.0 — must still match.
     const original = 'start\ncompletely\nunrelated\nmiddle\nend';
     const old = 'start\nzzz\nzzz\nzzz\nend';
     expect(blockAnchorFind(original, old)).toBe(original);
   });
 
   it('multi-candidate below 0.3 threshold → null', () => {
-    // Two candidates share anchors; middles are dissimilar to the query.
     const original = 'start\nAAAA\nend\nstart\nBBBB\nend';
     const old = 'start\nCCCC\nend';
     expect(blockAnchorFind(original, old)).toBeNull();
@@ -81,7 +71,6 @@ describe('whitespaceNormalizedFind', () => {
   });
 
   it('tolerates line-count drift by +/- window', () => {
-    // query is 2 lines; original has the content spread over 3 lines
     const original = 'a b\nc d\ne f';
     const old = 'a b\nc d\ne f';
     expect(whitespaceNormalizedFind(original, old)).toBe(original);
@@ -96,7 +85,6 @@ describe('indentationFlexibleFind', () => {
   });
 
   it('window is 3x query length', () => {
-    // query: 2 lines → window of 6 original lines; blanks count in window
     const original = 'w\n\n\n\n\nx\nlet q = 1;\n\nlet r = 2;';
     const old = 'let q = 1;\nlet r = 2;';
     expect(indentationFlexibleFind(original, old)).toBe('let q = 1;\n\nlet r = 2;');
@@ -131,8 +119,7 @@ describe('trimmedBoundaryFind', () => {
   it('line-level boundary expansion', () => {
     const original = 'header\n  alpha\n  beta\nfooter';
     const old = '  \n  alpha\n  beta\n  ';
-    // Rust trim() strips ALL leading/trailing whitespace incl. newlines, so
-    // the returned actual is the trimmed block (no leading '  ').
+
     expect(trimmedBoundaryFind(original, old)).toBe('alpha\n  beta');
   });
 
@@ -156,7 +143,6 @@ describe('contextAwareFind', () => {
   });
 
   it('below 0.5 similarity → null', () => {
-    // Short anchors ('s'/'e') with long dissimilar middles keep the ratio low.
     const original = 's\naaaaaa bbbbbb cccccc\ne\ns\ndddddd eeeeee ffffff\ne';
     const old = 's\nXXXXXXXXXX YYYYYYYYYY\ne';
     expect(contextAwareFind(original, old)).toBeNull();
@@ -167,7 +153,7 @@ describe('contextAwareFind', () => {
     const old = 'b c\nline-x';
     const result = contextAwareFind(original, old);
     expect(result).not.toBeNull();
-    // actual must be a verbatim slice of original
+
     expect(original.includes(result!)).toBe(true);
   });
 });
@@ -180,8 +166,6 @@ describe('multiOccurrenceFind', () => {
   });
 
   it('window length must match exactly (no blank skipping)', () => {
-    // query is 2 trimmed lines; original has a blank line between them —
-    // multi_occurrence does NOT skip blanks (that's indentation_flexible)
     const original = 'a\n\nb';
     expect(multiOccurrenceFind(original, 'a\nb')).toBeNull();
   });

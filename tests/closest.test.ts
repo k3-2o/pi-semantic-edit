@@ -47,3 +47,67 @@ describe('findClosestCandidate', () => {
     expect(candidate!.endLine).toBe(5);
   });
 });
+
+describe('findClosestCandidate reach', () => {
+  it('rescues when the first query line is wrong but a middle line matches', () => {
+    const original = 'aaa\n  work();\nbbb\n';
+    const old = 'GARBAGE LINE\n  work();\nBAZ';
+    const candidate = findClosestCandidate(original, old);
+    expect(candidate).not.toBeNull();
+    expect(candidate!.candidate).toContain('work();');
+    expect(candidate!.startLine).toBe(2);
+  });
+
+  it('finds a region shorter than the query (model added a line)', () => {
+    const original = 'l1\nl2\nl3\nl4\n';
+    const old = 'l1\nl2\nl3\nl4\nl5';
+    const candidate = findClosestCandidate(original, old);
+    expect(candidate).not.toBeNull();
+    expect(candidate!.candidate).toBe('l1\nl2\nl3\nl4');
+    expect(candidate!.startLine).toBe(1);
+    expect(candidate!.endLine).toBe(4);
+  });
+
+  it('finds a region longer than the query (model dropped a line)', () => {
+    const original = 'aaa\nmid\nmid2\nend\n';
+    const old = 'aaa\nend';
+    const candidate = findClosestCandidate(original, old);
+    expect(candidate).not.toBeNull();
+    expect(candidate!.candidate).toContain('aaa');
+    expect(candidate!.candidate).toContain('end');
+  });
+
+  it('reports which line differs and what the file has', () => {
+    const original = 'aaa\nbbb-x\nccc\n';
+    const old = 'aaa\nbbb\nccc';
+    const candidate = findClosestCandidate(original, old);
+    expect(candidate).not.toBeNull();
+    expect(candidate!.lineDiffs).toHaveLength(1);
+    expect(candidate!.lineDiffs![0]).toEqual({
+      lineNumber: 2,
+      yours: 'bbb',
+      file: 'bbb-x',
+    });
+  });
+
+  it('returns no lineDiffs when the closest window is an exact text block', () => {
+    const original = 'start\nkeep\nkeep2\nend\n';
+    const old = 'start\nkeep\nkeep2\nend';
+    const candidate = findClosestCandidate(original, old);
+    expect(candidate).not.toBeNull();
+    expect(candidate!.lineDiffs).toHaveLength(0);
+  });
+
+  it('keeps returning null when nothing is plausibly close', () => {
+    const original = 'x y z\nq r s';
+    const old = 'nothing-here\nat all';
+    expect(findClosestCandidate(original, old)).toBeNull();
+  });
+
+  it('single-line closest still works', () => {
+    const original = 'aa\nbbb\ncc\n';
+    const candidate = findClosestCandidate(original, 'bbc');
+    expect(candidate).not.toBeNull();
+    expect(candidate!.startLine).toBe(2);
+  });
+});

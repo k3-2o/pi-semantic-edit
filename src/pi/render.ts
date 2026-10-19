@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// --- TUI rendering — mirrors Pi's built-in edit rendering ---
 
 import { readFile, access as fsAccess } from 'fs/promises';
 import { constants } from 'fs';
@@ -230,8 +229,6 @@ export function createEditRenderers() {
   };
 }
 
-// --- Preview computation (async, mirrors built-in) ---
-
 async function computePreviewDiff(input: unknown, cwd: string): Promise<EditPreview> {
   try {
     const reqs = normalizeEditArgs(input);
@@ -240,12 +237,12 @@ async function computePreviewDiff(input: unknown, cwd: string): Promise<EditPrev
     }
     const first = reqs[0];
     if (!first.path) return { error: 'Each edit must specify a path.' };
-    // --- Resolve like the tool (session cwd, ~ expansion) so preview and apply agree ---
+
     const absolutePath = resolveToCwd(first.path, cwd);
     await fsAccess(absolutePath, constants.R_OK);
     const rawContent = await readFile(absolutePath, 'utf-8');
     const { text } = stripBom(rawContent);
-    // --- Matcher and apply operate on LF-normalized content (same as tool.execute), so the preview and the edit agree ---
+
     const content = normalizeNewlines(text);
     const result = applyBlocks(content, reqs, first.path);
     if (!result.ok || result.content === undefined) {

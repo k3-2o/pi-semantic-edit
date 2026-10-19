@@ -1,17 +1,10 @@
-// --- 9-pass fuzzy chain — port of OpenDev passes.rs; inputs LF-normalized by caller (chain.ts) ---
-// --- SAFETY INVARIANT: a pass returns only text re-verified in original (original.includes(actual)) — never text not in the file ---
-
 import { similarity } from './similarity';
 
 type PassFind = (original: string, oldContent: string) => string | null;
 
-// --- Pass 1: Simple (exact match) ---
-
 export function simpleFind(original: string, oldContent: string): string | null {
   return original.includes(oldContent) ? oldContent : null;
 }
-
-// --- Pass 2: LineTrimmed ---
 
 export function lineTrimmedFind(original: string, oldContent: string): string | null {
   const oldLines = oldContent.split('\n');
@@ -32,8 +25,6 @@ export function lineTrimmedFind(original: string, oldContent: string): string | 
   }
   return null;
 }
-
-// --- Pass 3: BlockAnchor (first/last lines anchor, middle scored) ---
 
 export function blockAnchorFind(original: string, oldContent: string): string | null {
   const oldLines = oldContent.split('\n');
@@ -68,7 +59,6 @@ export function blockAnchorFind(original: string, oldContent: string): string | 
 
   if (candidates.length === 0) return null;
 
-  // --- Threshold: 0.0 for a single candidate, 0.3 when multiple exist ---
   const threshold = candidates.length === 1 ? 0.0 : 0.3;
   let best = candidates[0];
   for (const c of candidates) if (c.sim > best.sim) best = c;
@@ -77,8 +67,6 @@ export function blockAnchorFind(original: string, oldContent: string): string | 
   const actual = originalLines.slice(best.start, best.end + 1).join('\n');
   return original.includes(actual) ? actual : null;
 }
-
-// --- Pass 4: WhitespaceNormalized ---
 
 function wsNormalize(s: string): string {
   return s
@@ -102,8 +90,6 @@ export function whitespaceNormalizedFind(original: string, oldContent: string): 
   }
   return null;
 }
-
-// --- Pass 5: IndentationFlexible ---
 
 export function indentationFlexibleFind(original: string, oldContent: string): string | null {
   const oldStripped = oldContent
@@ -141,10 +127,7 @@ export function indentationFlexibleFind(original: string, oldContent: string): s
   return null;
 }
 
-// --- Pass 6: EscapeNormalized ---
-
 function unescape(s: string): string {
-  // --- Rust str::replace replaces ALL; JS String.replace only the first — replaceAll required for parity ---
   return s
     .replaceAll('\\n', '\n')
     .replaceAll('\\t', '\t')
@@ -159,15 +142,12 @@ export function escapeNormalizedFind(original: string, oldContent: string): stri
   return original.includes(unescaped) ? unescaped : null;
 }
 
-// --- Pass 7: TrimmedBoundary ---
-
 export function trimmedBoundaryFind(original: string, oldContent: string): string | null {
   const trimmed = oldContent.trim();
   if (trimmed === oldContent) return null;
 
   if (original.includes(trimmed)) return trimmed;
 
-  // --- Fallback: first/last content lines as contains-anchors ---
   const oldLines = oldContent.split('\n');
   const firstContent = oldLines[0].trim();
   const lastContent = oldLines[oldLines.length - 1].trim();
@@ -187,8 +167,6 @@ export function trimmedBoundaryFind(original: string, oldContent: string): strin
   }
   return null;
 }
-
-// --- Pass 8: ContextAware ---
 
 export function contextAwareFind(original: string, oldContent: string): string | null {
   const oldLines = oldContent.split('\n');
@@ -223,15 +201,13 @@ export function contextAwareFind(original: string, oldContent: string): string |
           bestSim = sim;
           bestMatch = candidate;
         }
-        break; // --- first end anchor per start only ---
+        break;
       }
     }
   }
 
   return bestMatch !== null && original.includes(bestMatch) ? bestMatch : null;
 }
-
-// --- Pass 9: MultiOccurrence (trimmed line-by-line, last resort) ---
 
 export function multiOccurrenceFind(original: string, oldContent: string): string | null {
   const trimmed = oldContent.trim();
@@ -253,32 +229,43 @@ export function multiOccurrenceFind(original: string, oldContent: string): strin
   return null;
 }
 
-// --- Pass 10: UnicodeNormalized (our addition) — NFKC + punct map ---
-// --- NFKC covers NBSP/ligatures but NOT typographic quotes/dashes (no compatibility decomposition) — PUNCT_MAP covers those; after the 9 OpenDev passes for parity ---
-
 const PUNCT_MAP: Record<string, string> = {
-  '\u2018': "'", // ‘ left single quote
-  '\u2019': "'", // ’ right single quote
-  '\u201A': "'", // ‚ single low-9 quote
-  '\u201B': "'", // ‛ single high-reversed-9 quote
-  '\u201C': '"', // “ left double quote
-  '\u201D': '"', // ” right double quote
-  '\u201E': '"', // „ double low-9 quote
-  '\u201F': '"', // ‟ double high-reversed-9 quote
-  '\u2013': '-', // – en dash
-  '\u2014': '-', // — em dash
+  '\u2018': "'",
+  '\u2019': "'",
+  '\u201A': "'",
+  '\u201B': "'",
+  '\u201C': '"',
+  '\u201D': '"',
+  '\u201E': '"',
+  '\u201F': '"',
+  '\u2013': '-',
+  '\u2014': '-',
+};
+
+const CONFUSABLE_MAP: Record<string, string> = {
+  '\u0430': 'a',
+  '\u0435': 'e',
+  '\u043E': 'o',
+  '\u0440': 'p',
+  '\u0441': 'c',
+  '\u0445': 'x',
+  '\u0443': 'y',
+  '\u043A': 'k',
+  '\u043C': 'm',
+  '\u0442': 't',
+  '\u0456': 'i',
+  '\u03BF': 'o',
 };
 
 function normalizeText(s: string): string {
   return s
     .normalize('NFKC')
     .replace(
-      /[\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u2013\u2014]/g,
-      (c) => PUNCT_MAP[c] ?? c,
+      /[\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u2013\u2014\u0430\u0435\u043E\u0440\u0441\u0445\u0443\u043A\u043C\u0442\u0456\u03BF]/g,
+      (c) => PUNCT_MAP[c] ?? CONFUSABLE_MAP[c] ?? c,
     );
 }
 
-// --- ASCII fast-path: lets the common case skip normalization entirely ---
 function isAscii(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
     if (s.charCodeAt(i) > 127) return false;
@@ -299,7 +286,7 @@ function mapNormalizedIndex(s: string, normIndex: number): number {
 
 export function unicodeNormalizedFind(original: string, oldContent: string): string | null {
   const normOld = normalizeText(oldContent);
-  // --- Skip when query already normalized and file is pure ASCII; non-ASCII files may hold ligatures ---
+
   if (normOld === oldContent && isAscii(original)) return null;
   const normOrig = normalizeText(original);
   const idx = normOrig.indexOf(normOld);
@@ -309,8 +296,6 @@ export function unicodeNormalizedFind(original: string, oldContent: string): str
   const actual = original.slice(start, end);
   return original.includes(actual) ? actual : null;
 }
-
-// --- Chain registry — single source of truth for pass order ---
 
 export interface Replacer {
   name: string;

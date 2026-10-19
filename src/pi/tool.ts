@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// --- Pi adapter — schema, execute orchestration, error wiring; heavy logic lives in the domain layer ---
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'fs';
-import { access as fsAccess, readFile, rename, writeFile } from 'fs/promises';
+import { access as fsAccess, readFile, rename, stat, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import {
   generateDiffString,
@@ -18,6 +17,7 @@ import {
   fileNotFoundError,
   malformedPatchError,
   missingPathError,
+  staleReadError,
   validationError,
 } from '../domain/errors';
 import { MalformedPatchError } from '../domain/parser';
@@ -31,8 +31,8 @@ import {
 import { editToolSchema, type EditToolInput } from './schema';
 import { normalizeEditArgs, type EditRequestLike } from './normalize';
 import { createEditRenderers } from './render';
+import { checkStaleGuard, MAX_SNAPSHOT_CHARS, normalizeSnapshot, ReadTracker } from './staleness';
 
-// --- Throw an Error carrying a structured EditError (for renderers/debugging) ---
 function toolError(error: EditError): Error {
   return Object.assign(new Error(error.message), { editError: error });
 }
@@ -42,7 +42,6 @@ interface FileGroup {
   blocks: EditRequestLike[];
 }
 
-// --- Group requests by path, preserving first-seen order ---
 function groupByPath(blocks: EditRequestLike[]): FileGroup[] {
   const groups: FileGroup[] = [];
   const index = new Map<string, number>();
@@ -58,32 +57,97 @@ function groupByPath(blocks: EditRequestLike[]): FileGroup[] {
   return groups;
 }
 
-// --- Creates the `edit` tool — shadows Pi's built-in (SPEC D1) ---
-export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
+function subscribeToToolResults(pi: ExtensionAPI, baseCwd: string, tracker: ReadTracker): void {
+  const anyPi = pi as unknown as {
+    on?: (ev: string, h: (e: unknown, ctx: unknown) => void) => unknown;
+    events?: { on?: (ev: string, h: (e: unknown, ctx: unknown) => void) => unknown };
+  };
+  const register =
+    (typeof anyPi?.on === 'function' && anyPi.on.bind(anyPi)) ||
+    (typeof anyPi?.events?.on === 'function' && anyPi.events.on.bind(anyPi.events));
+  if (!register) return;
+
+  register('tool_result', async (event: unknown, ctx: unknown) => {
+    try {
+      const payload = (event ?? {}) as Record<string, unknown>;
+      if (payload.isError === true) return;
+      const input = (payload.input ?? {}) as Record<string, unknown>;
+      const toolName = typeof payload.toolName === 'string' ? payload.toolName : '';
+      const cwd = (ctx as { cwd?: string } | undefined)?.cwd ?? baseCwd;
+      const pathArg = pickPathArg(input);
+      if (!pathArg) return;
+      const absolute = resolveToCwd(pathArg, cwd);
+      if (toolName === 'write' && typeof input.content === 'string') {
+        tracker.record(absolute, {
+          content: normalizeSnapshot(input.content),
+          size: Buffer.byteLength(String(input.content)),
+          mtimeMs: Date.now(),
+        });
+        return;
+      }
+      if (toolName === 'read' || toolName === 'edit') {
+        await recordFromDisk(absolute, tracker);
+      }
+    } catch {
+      // --- Never break the event stream over an untrackable result ---
+    }
+  });
+}
+
+function pickPathArg(input: Record<string, unknown>): string | null {
+  const raw = input.path ?? input.fileName ?? input.file;
+  return typeof raw === 'string' && raw.length > 0 ? raw : null;
+}
+
+async function recordFromDisk(absolute: string, tracker: ReadTracker): Promise<void> {
+  const st = await stat(absolute);
+  if (st.size > MAX_SNAPSHOT_CHARS) {
+    tracker.record(absolute, { content: null, size: st.size, mtimeMs: st.mtimeMs });
+    return;
+  }
+  const raw = await readFile(absolute, 'utf-8');
+  tracker.record(absolute, {
+    content: normalizeSnapshot(raw),
+    size: st.size,
+    mtimeMs: st.mtimeMs,
+  });
+}
+
+function excerptOf(content: string, changedLines?: [number, number]): string | undefined {
+  if (!changedLines) return undefined;
+  const lines = content.split('\n');
+  const [first, last] = [changedLines[0], Math.min(changedLines[1], changedLines[0] + 1)];
+  const parts: string[] = [];
+  for (let i = first - 1; i < last && i < lines.length; i++) {
+    const ln = lines[i];
+    parts.push(ln.length > 80 ? ln.slice(0, 80) + '…' : ln);
+  }
+  return parts.join(' / ');
+}
+
+export function createRobustEditTool(cwd: string, pi: ExtensionAPI) {
   const renderers = createEditRenderers();
+  const tracker = new ReadTracker();
+  subscribeToToolResults(pi, cwd, tracker);
 
   return {
     name: 'edit',
     label: 'edit',
+
     description:
-      'Edit a file by providing exact text replacements (edits[]), each with oldText and newText. ' +
-      'The matcher tolerates whitespace, indentation, escape, and formatting drift ' +
-      'between the oldText and the actual file content (10-pass fuzzy chain). ' +
-      'If the text matches multiple locations, the edit fails with the line ' +
-      'positions and asks for more context — it never guesses. Set replaceAll: true ' +
-      'on an edit to replace every occurrence (e.g. renaming a variable). Format:\n' +
-      '{ "path": "src/foo.ts", "edits": [{ "oldText": "let x = 1;", "newText": "let x = 2;" }] }',
-    promptSnippet:
-      'Make precise file edits with exact text replacement, including multiple disjoint edits in one call — set replaceAll: true to replace every occurrence (e.g. renames)',
+      'Edit a file via exact text replacement. oldText must be a unique, non-overlapping region of ' +
+      'the original file; merge nearby changes into one edit; no large unchanged padding.',
+    promptSnippet: 'Edit files with exact text replacement; batch several edits into one call',
     promptGuidelines: [
-      'Use edit for precise changes (edits[].oldText must match the current file content, modulo tolerated drift).',
-      'When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls.',
-      'Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.',
-      'Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.',
-      'The matcher tolerates minor whitespace, indentation, line-ending, escape, and Unicode drift — but copy the code as accurately as you can.',
-      'If the text matches multiple locations, the edit fails with the line positions — include more surrounding context, or set replaceAll: true to replace every occurrence. If nothing matches, the error shows the closest text actually in the file; correct against that and retry.',
+      'Use edit for precise changes; oldText must match exactly',
+      'Several separate changes in one file: one call, multiple edits[] entries',
+      'edits[] match the original file; no overlapping or nested edits; merge nearby changes into one edit',
+      'oldText: smallest unique span; no large unchanged padding',
+
+      'replaceAll: true replaces every occurrence (renames)',
     ],
     parameters: editToolSchema,
+    constrainedSampling: { type: 'json_schema', strict: 'prefer' } as const,
     renderShell: 'self' as const,
 
     prepareArguments(input: any) {
@@ -92,7 +156,6 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
       try {
         reqs = normalizeEditArgs(input);
       } catch (err) {
-        // --- Deprecated aider input parsing can throw; leave input for the error path to describe ---
         if (err instanceof MalformedPatchError) return input;
         throw err;
       }
@@ -117,22 +180,26 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
         if (signal?.aborted) throw new Error('Operation aborted');
       };
 
-      // --- Resolve against the SESSION cwd, not the extension-load cwd — they differ when pi is launched elsewhere ---
       const baseCwd = ctx?.cwd ?? cwd;
 
       let blocks: EditRequestLike[] | null;
       try {
         blocks = normalizeEditArgs(input);
       } catch (err) {
-        // --- Deprecated aider parsing: surface a typed EditError, not a raw exception ---
         if (err instanceof MalformedPatchError) {
           throw toolError(malformedPatchError(err.message, err.index));
         }
         throw err;
       }
       if (!blocks || blocks.length === 0) {
+        const raw = input as unknown as Record<string, unknown>;
+        const stringEdits = typeof raw.edits === 'string';
         throw toolError(
-          validationError('No edits found. Provide path and edits[] with oldText/newText pairs.'),
+          validationError(
+            stringEdits
+              ? 'edits is a JSON string that did not parse. Provide edits[] as an array of {oldText, newText} objects.'
+              : 'No edits found. Provide edits[] with oldText/newText pairs.',
+          ),
         );
       }
       if (blocks.some((b) => !b.path)) {
@@ -161,37 +228,62 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
             throw toolError(fileNotFoundError(`${group.path} (${code})`));
           }
 
+          let statInfo: { size: number; mtimeMs: number } | undefined;
+          try {
+            const st = await stat(absolutePath);
+            statInfo = { size: st.size, mtimeMs: st.mtimeMs };
+          } catch {
+            statInfo = undefined;
+          }
+
           throwIfAborted();
           let buffer: Buffer;
           try {
             buffer = await readFile(absolutePath);
           } catch (err) {
-            // --- File vanished or became unreadable after access — re-read is the fix ---
             const code =
               err && typeof err === 'object' && 'code' in err
                 ? `${(err as { code?: unknown }).code}`
                 : String(err);
             throw toolError(
               validationError(
-                `Could not read ${group.path} (${code}) — the file may have changed or been removed. ` +
-                  'Re-read the file and retry the edit.',
+                `Could not read ${group.path} (${code}) — file changed or removed. ` +
+                  'Re-read and retry.',
               ),
             );
           }
           const rawContent = buffer.toString('utf-8');
           const { bom, text } = stripBom(rawContent);
           const ending = detectLineEnding(text);
-          // --- CRLF pitfall: match AND apply on LF-normalized content, restore original endings on write ---
+
           const content = normalizeNewlines(text);
 
           const result = applyBlocks(content, group.blocks, group.path);
           if (!result.ok || result.content === undefined) throw toolError(result.error!);
 
+          const guard = checkStaleGuard({
+            tracker,
+            path: absolutePath,
+            matchPasses: result.matchPasses,
+            spans: result.spans,
+            currentContent: content,
+            currentSize: statInfo?.size ?? 0,
+            currentMtimeMs: statInfo?.mtimeMs ?? 0,
+          });
+          if (guard.stale) {
+            throw toolError(
+              staleReadError(
+                group.path,
+                guard.changedLines,
+                excerptOf(content, guard.changedLines),
+              ),
+            );
+          }
+
           const warnings = coherenceCheck(result.content);
 
           const finalContent = bom + restoreLineEndings(result.content, ending);
 
-          // --- Atomic write: temp file + rename (same directory) ---
           const tmpPath = resolve(dirname(absolutePath), `.${randomUUID()}.tmp`);
           await writeFile(tmpPath, finalContent, 'utf-8');
           await rename(tmpPath, absolutePath);
@@ -208,11 +300,8 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
           };
         });
 
-        const replacementWord = fileResult.replacements === 1 ? 'replacement' : 'replacements';
-        summaries.push(
-          `Successfully replaced ${fileResult.replacements} ${replacementWord} across ` +
-            `${fileResult.appliedCount} edit(s) in ${group.path}.`,
-        );
+        // --- Render parity with pi's built-in: 'Successfully replaced N block(s) in path.' ---
+        summaries.push(`Successfully replaced ${group.blocks.length} block(s) in ${group.path}.`);
         if (fileResult.warnings.length > 0) {
           summaries.push('Coherence warnings:');
           for (const w of fileResult.warnings) summaries.push(`  - ${w}`);
@@ -225,14 +314,10 @@ export function createRobustEditTool(cwd: string, _pi: ExtensionAPI) {
         }
       }
 
-      const text = [summaries.join('\n')];
-      const nonSimple = matchPasses.filter((p) => p !== 'simple');
-      if (nonSimple.length > 0) {
-        text.push(`Match passes: ${nonSimple.join(', ')}`);
-      }
+      const text = summaries.join('\n');
 
       return {
-        content: [{ type: 'text' as const, text: text.join('\n') }],
+        content: [{ type: 'text' as const, text }],
         details: {
           diff: primaryDiff,
           patch: primaryPatch,

@@ -2,7 +2,6 @@ import { REPLACER_CHAIN } from './passes';
 import type { MatchResult } from './types';
 import { normalizeNewlines } from './utils';
 
-// --- Run the replacer chain in order, short-circuit on first match (OpenDev find_match parity) ---
 export function findMatch(original: string, oldContent: string): MatchResult | null {
   const orig = normalizeNewlines(original);
   const old = normalizeNewlines(oldContent);
@@ -16,14 +15,13 @@ export function findMatch(original: string, oldContent: string): MatchResult | n
   return null;
 }
 
-// --- 1-indexed line numbers of every occurrence of needle in haystack ---
 export function findOccurrencePositions(haystack: string, needle: string): number[] {
   const positions: number[] = [];
   let searchPos = 0;
   while (searchPos <= haystack.length) {
     const idx = haystack.indexOf(needle, searchPos);
     if (idx === -1) break;
-    positions.push(haystack.slice(0, idx).split('\n').length); // newlines + 1
+    positions.push(haystack.slice(0, idx).split('\n').length);
     searchPos = idx + 1;
   }
   return positions;

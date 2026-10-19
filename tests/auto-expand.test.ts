@@ -10,11 +10,7 @@ function parse(path: string, oldText: string, newText: string) {
 
 describe('auto-expand disambiguation', () => {
   it('resolves when exactly ONE occurrence has distinguishable context', () => {
-    // 'helper();' appears 2×. The SECOND one sits directly above a unique
-    // marker line; the first is at file start. At expansion level 1 the second
-    // occurrence's context ('helper();\nhelper();') is unique while the first
-    // ('helper();') still matches twice → auto-expand pins the second.
-    const content = ['helper();', 'helper();', 'marker();'].join('\n');
+    const content = 'helper();\nshared();\nhelper();\nunique-marker();\n';
     const blocks = parse('f.ts', 'helper();', 'changed();');
     const outcome = resolveBlocks(content, blocks, 'f.ts');
     expect(outcome.ok).toBe(true);
@@ -23,12 +19,10 @@ describe('auto-expand disambiguation', () => {
 
     const applied = applyBlocks(content, blocks, 'f.ts');
     expect(applied.ok).toBe(true);
-    expect(applied.content).toBe('helper();\nchanged();\nmarker();');
+    expect(applied.content).toBe('helper();\nshared();\nchanged();\nunique-marker();\n');
   });
 
   it('errors when BOTH occurrences disambiguate simultaneously (formatRow/formatRowAlt)', () => {
-    // The smoke-test mission-5 file: identical first lines, different function
-    // signatures → expansion makes BOTH unique at once → genuinely ambiguous.
     const content = [
       'function formatRow(item: Item): string {',
       '  const id = item.id;',
@@ -85,5 +79,35 @@ describe('auto-expand disambiguation', () => {
     expect(outcome.ok).toBe(true);
     expect(outcome.resolved).toHaveLength(20);
     expect(outcome.resolved![0].match.passName).toBe('replace_all');
+  });
+});
+
+describe('auto-expand boundary ambiguity', () => {
+  it('refuses when the unique context contains sibling occurrences (file-edge geometry)', () => {
+    const content = 'same();\nsame();\nsame();\n';
+    const blocks = parse('f.ts', 'same();', 'changed();');
+    const outcome = resolveBlocks(content, blocks, 'f.ts');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error!.kind).toBe('ambiguous');
+  });
+
+  it('refuses identical twins instead of picking one by boundary', () => {
+    const content = 'd\u0430t\u0430\nd\u0430t\u0430\n';
+    const outcome = resolveBlocks(
+      content,
+      [{ path: 'f.ts', oldText: 'data', newText: 'DATА' }],
+      'f.ts',
+    );
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error!.kind).toBe('ambiguous');
+  });
+
+  it('still auto-expands when the unique context contains exactly one occurrence', () => {
+    const content = 'helper();\nunique-marker();\nhelper();\n';
+    const blocks = parse('f.ts', 'helper();', 'changed();');
+    const outcome = resolveBlocks(content, blocks, 'f.ts');
+    expect(outcome.ok).toBe(true);
+    expect(outcome.resolved![0].match.passName).toBe('auto_expand');
+    expect(outcome.resolved![0].start).toBe(content.lastIndexOf('helper();'));
   });
 });

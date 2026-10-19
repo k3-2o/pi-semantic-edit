@@ -1,28 +1,34 @@
-// --- Tool input schema — the model-facing contract (SPEC D1) ---
-// --- Primary shape: built-in edit schema + optional per-edit replaceAll; aider patch deprecated, NOT in schema ---
-
 import { Type, type Static } from 'typebox';
 
 const replaceEditSchema = Type.Object({
   oldText: Type.String({
     description:
-      'Exact text for one targeted replacement. It must be unique in the original file unless replaceAll is set, and must not overlap with any other edits[].oldText in the same call.',
+      'Exact replacement text, unique unless replaceAll: true; no overlap with other edits[] in the same call.',
   }),
-  newText: Type.String({ description: 'Replacement text for this targeted edit.' }),
+  newText: Type.String({ description: 'Replacement text.' }),
   replaceAll: Type.Optional(
     Type.Boolean({
-      description:
-        'Replace every occurrence of the matched text instead of failing on ambiguity (rename-everywhere edits). Default false.',
+      description: 'Replace every occurrence (renames).',
     }),
   ),
 });
 
+const singleEditSchema = Type.Object({
+  oldText: Type.String(),
+  newText: Type.String(),
+  replaceAll: Type.Optional(Type.Boolean()),
+});
+
 export const editToolSchema = Type.Object({
-  path: Type.String({ description: 'Path to the file to edit (relative or absolute)' }),
-  edits: Type.Array(replaceEditSchema, {
-    description:
-      'One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead.',
-  }),
+  path: Type.String({ description: 'File to edit (relative or absolute)' }),
+  edits: Type.Union([
+    Type.Array(replaceEditSchema, {
+      description:
+        'Targeted replacements, matched against the original file; no overlapping or nested edits; merge nearby changes.',
+    }),
+    singleEditSchema,
+    Type.String({ description: 'Edits as a JSON string.' }),
+  ]),
 });
 
 export type EditToolInput = Static<typeof editToolSchema>;

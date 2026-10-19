@@ -1,5 +1,3 @@
-// --- Uniqueness guard: count occurrences of the ACTUAL matched text (not the query); >1 means ambiguous — never guess ---
-
 import { findOccurrencePositions } from './chain';
 
 export interface OccurrenceReport {
@@ -13,7 +11,6 @@ export function reportOccurrences(content: string, actual: string): OccurrenceRe
   return { count: positions.length, positions, ambiguous: positions.length > 1 };
 }
 
-// --- e.g. [3, 7] → "line 3, line 7" ---
 export function formatLinePositions(positions: number[]): string {
   return positions.map((n) => `line ${n}`).join(', ');
 }
